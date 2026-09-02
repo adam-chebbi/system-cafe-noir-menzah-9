@@ -1,0 +1,6 @@
+{
+  "name": "Café Noir Système",
+  "description": "Plateforme opérationnelle complète pour café : caisse POS, commandes QR, gestion des tables, fiches techniques, stocks, fournisseurs, factures OCR, employés et site public.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,509 @@
+import {
+  User, Space, Table, Reservation, PlanElement, TableHistoryItem, Category, Ingredient, TechnicalRecipe,
+  Product, Order, Sale, StockMovement, StockWaste, InventoryAudit,
+  Supplier, PurchaseOrder, SupplierInvoice, Expense, Shift, AttendanceRecord,
+  LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession, CashMovement
+} from '../types/index';
+
+async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {})
+    },
+    ...options
+  });
+
+  if (!res.ok) {
+    let errorMsg = `Erreur HTTP ${res.status}`;
+    try {
+      const err = await res.json();
+      if (err.error) errorMsg = err.error;
+    } catch (_) {}
+    throw new Error(errorMsg);
+  }
+
+  return res.json();
+}
+
+export const api = {
+  // Auth
+  loginPin: (pin: string) => fetchJson<{ success: boolean; user: User }>('/api/auth/login-pin', {
+    method: 'POST',
+    body: JSON.stringify({ pin })
+  }),
+  getUsers: () => fetchJson<User[]>('/api/users'),
+  createUser: (data: Partial<User>, performedBy: string) => fetchJson<User>('/api/users', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateUser: (id: string, updates: Partial<User>, performedBy: string) => fetchJson<User>(`/api/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteUser: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/users/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+
+  // Metrics
+  getDashboardMetrics: () => fetchJson<any>('/api/dashboard/metrics'),
+
+  // Spaces & Tables
+  getSpaces: () => fetchJson<Space[]>('/api/spaces'),
+  createSpace: (data: Partial<Space>, performedBy: string) => fetchJson<Space>('/api/spaces', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateSpace: (id: string, updates: Partial<Space>, performedBy: string) => fetchJson<Space>(`/api/spaces/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteSpace: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/spaces/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  reorderSpaces: (orderedIds: string[], performedBy: string) => fetchJson<Space[]>('/api/spaces/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ orderedIds, performedBy })
+  }),
+  getTables: () => fetchJson<Table[]>('/api/tables'),
+  createTable: (data: Partial<Table>, performedBy: string) => fetchJson<Table>('/api/tables', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  duplicateTable: (id: string, performedBy: string) => fetchJson<Table>(`/api/tables/${id}/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify({ performedBy })
+  }),
+  updateTable: (id: string, updates: Partial<Table>, performedBy: string) => fetchJson<Table>(`/api/tables/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteTable: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/tables/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  updateTablePositions: (positions: { id: string; posX: number; posY: number; rotation?: number }[], performedBy: string) => fetchJson<{ success: boolean }>('/api/tables/positions', {
+    method: 'POST',
+    body: JSON.stringify({ positions, performedBy })
+  }),
+  getTableHistory: (tableId?: string) => {
+    const query = tableId ? `?tableId=${encodeURIComponent(tableId)}` : '';
+    return fetchJson<TableHistoryItem[]>(`/api/tables/history${query}`);
+  },
+
+  // Plan Elements
+  getPlanElements: (spaceId?: string) => {
+    const query = spaceId ? `?spaceId=${encodeURIComponent(spaceId)}` : '';
+    return fetchJson<PlanElement[]>(`/api/plan-elements${query}`);
+  },
+  createPlanElement: (data: Partial<PlanElement>, performedBy: string) => fetchJson<PlanElement>('/api/plan-elements', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updatePlanElement: (id: string, updates: Partial<PlanElement>, performedBy: string) => fetchJson<PlanElement>(`/api/plan-elements/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deletePlanElement: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/plan-elements/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  updatePlanElementPositions: (positions: { id: string; posX: number; posY: number; rotation?: number; width?: number; height?: number }[], performedBy: string) => fetchJson<{ success: boolean }>('/api/plan-elements/positions', {
+    method: 'POST',
+    body: JSON.stringify({ positions, performedBy })
+  }),
+
+  // Reservations
+  getReservations: () => fetchJson<Reservation[]>('/api/reservations'),
+  checkReservationConflict: (tableId: string, date: string, time: string, excludeId?: string) => {
+    const params = new URLSearchParams({ tableId, date, time });
+    if (excludeId) params.set('excludeId', excludeId);
+    return fetchJson<{ hasConflict: boolean; conflictingReservation?: Reservation }>(`/api/reservations/check-conflict?${params.toString()}`);
+  },
+  createReservation: (data: Partial<Reservation>, performedBy: string) => fetchJson<Reservation>('/api/reservations', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateReservation: (id: string, updates: Partial<Reservation>, performedBy: string) => fetchJson<Reservation>(`/api/reservations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteReservation: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/reservations/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+
+  // Catalog
+  getCategories: () => fetchJson<Category[]>('/api/categories'),
+  createCategory: (data: Partial<Category>, performedBy: string) => fetchJson<Category>('/api/categories', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateCategory: (id: string, updates: Partial<Category>, performedBy: string) => fetchJson<Category>(`/api/categories/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteCategory: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/categories/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getProducts: () => fetchJson<Product[]>('/api/products'),
+  createProduct: (data: Partial<Product>, performedBy: string) => fetchJson<Product>('/api/products', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateProduct: (id: string, updates: Partial<Product>, performedBy: string) => fetchJson<Product>(`/api/products/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteProduct: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/products/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getRecipes: () => fetchJson<TechnicalRecipe[]>('/api/recipes'),
+  saveRecipe: (data: Partial<TechnicalRecipe>, performedBy: string) => fetchJson<TechnicalRecipe>('/api/recipes', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  deleteRecipe: (productId: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/recipes/${productId}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  importProductsCsv: (csvContent: string, performedBy: string) => fetchJson<{ imported: number; errors: string[] }>('/api/products/import/csv', {
+    method: 'POST',
+    body: JSON.stringify({ csvContent, performedBy })
+  }),
+
+  // Orders
+  getOrders: (params?: { status?: string; tableId?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.tableId) query.set('tableId', params.tableId);
+    return fetchJson<Order[]>(`/api/orders?${query.toString()}`);
+  },
+  getOrderById: (id: string) => fetchJson<Order>(`/api/orders/${id}`),
+  createQROrder: (data: any) => fetchJson<Order>('/api/orders/qr', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  createPOSOrder: (data: any) => fetchJson<Order>('/api/orders/pos', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  launchOrder: (id: string, performedBy: string) => fetchJson<Order>(`/api/orders/${id}/launch`, {
+    method: 'POST',
+    body: JSON.stringify({ performedBy })
+  }),
+  updateOrder: (id: string, updates: any, performedBy: string) => fetchJson<Order>(`/api/orders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  transferOrder: (id: string, newTableId: string, performedBy: string) => fetchJson<Order>(`/api/orders/${id}/transfer`, {
+    method: 'POST',
+    body: JSON.stringify({ newTableId, performedBy })
+  }),
+  cancelOrder: (id: string, reason: string, performedBy: string) => fetchJson<Order>(`/api/orders/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, performedBy })
+  }),
+  acceptOrder: (id: string, performedBy: string) => fetchJson<Order>(`/api/orders/${id}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ performedBy })
+  }),
+  rejectOrder: (id: string, rejectionReason: string, performedBy: string) => fetchJson<Order>(`/api/orders/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ rejectionReason, performedBy })
+  }),
+  updateItemStatus: (orderId: string, itemId: string, status: string, performedBy: string) => fetchJson<Order>(`/api/orders/${orderId}/items/${itemId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, performedBy })
+  }),
+  payOrder: (orderId: string, paymentData: any) => fetchJson<{ order: Order; sale: Sale }>(`/api/orders/${orderId}/pay`, {
+    method: 'POST',
+    body: JSON.stringify(paymentData)
+  }),
+
+  // Sales & Cash Register
+  getSales: (filter?: { search?: string; paymentMethod?: string; cashierId?: string; startDate?: string; endDate?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (filter?.search) query.set('search', filter.search);
+    if (filter?.paymentMethod) query.set('paymentMethod', filter.paymentMethod);
+    if (filter?.cashierId) query.set('cashierId', filter.cashierId);
+    if (filter?.startDate) query.set('startDate', filter.startDate);
+    if (filter?.endDate) query.set('endDate', filter.endDate);
+    if (filter?.limit) query.set('limit', String(filter.limit));
+    const qs = query.toString();
+    return fetchJson<Sale[]>(`/api/sales${qs ? `?${qs}` : ''}`);
+  },
+  getSaleById: (id: string) => fetchJson<Sale>(`/api/sales/${id}`),
+  createManualSale: (data: any) => fetchJson<Sale>('/api/sales/manual', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  importSalesBatch: (sales: any[], performedBy: string) => fetchJson<{ importedCount: number; totalAmount: number; errors: string[] }>('/api/sales/import-batch', {
+    method: 'POST',
+    body: JSON.stringify({ sales, performedBy })
+  }),
+  cancelSale: (id: string, reason: string, performedBy: string) => fetchJson<Sale>(`/api/sales/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, performedBy })
+  }),
+  getActiveRegister: () => fetchJson<CashRegisterSession | null>('/api/cash-register/active'),
+  getCashRegisterSessions: () => fetchJson<CashRegisterSession[]>('/api/cash-register/sessions'),
+  getRegisterSessions: () => fetchJson<CashRegisterSession[]>('/api/cash-register/sessions'),
+  getCashMovements: (sessionId?: string) => {
+    const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    return fetchJson<CashMovement[]>(`/api/cash-register/movements${query}`);
+  },
+  openRegister: (cashierId: string, cashierName: string, openingCash: number) => fetchJson<CashRegisterSession>('/api/cash-register/open', {
+    method: 'POST',
+    body: JSON.stringify({ cashierId, cashierName, openingCash })
+  }),
+  addCashMovement: (sessionIdOrData: any, optionalData?: any) => {
+    let payload: any = {};
+    if (typeof sessionIdOrData === 'string') {
+      payload = { sessionId: sessionIdOrData, ...optionalData };
+    } else {
+      payload = sessionIdOrData;
+    }
+    return fetchJson<{ session: CashRegisterSession; movement: any }>('/api/cash-register/movement', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  closeRegister: (
+    id: string,
+    actualClosingCash: number,
+    notes?: string,
+    performedBy?: string,
+    payload?: Partial<import('../types').ClosingRegisterPayload>
+  ) =>
+    fetchJson<CashRegisterSession>(`/api/cash-register/${id}/close`, {
+      method: 'POST',
+      body: JSON.stringify({ actualClosingCash, notes, performedBy, ...payload })
+    }),
+  updateOrderItems: (id: string, items: any[], discountAmount = 0, discountReason = '', performedBy = 'Caissier') => {
+    return fetchJson<Order>(`/api/orders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ items, discountAmount, discountReason, performedBy })
+    });
+  },
+
+  // Stock
+  getIngredients: () => fetchJson<Ingredient[]>('/api/ingredients'),
+  createIngredient: (data: Partial<Ingredient>, performedBy: string) => fetchJson<Ingredient>('/api/ingredients', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateIngredient: (id: string, updates: Partial<Ingredient>, performedBy: string) => fetchJson<Ingredient>(`/api/ingredients/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteIngredient: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/ingredients/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getStockMovements: () => fetchJson<StockMovement[]>('/api/stock/movements'),
+  createStockEntry: (data: any) => fetchJson<StockMovement>('/api/stock/manual-entry', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  getStockWastes: () => fetchJson<StockWaste[]>('/api/stock/wastes'),
+  recordWaste: (data: Partial<StockWaste>, performedBy: string) => fetchJson<StockWaste>('/api/stock/wastes', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  getInventoryAudits: () => fetchJson<InventoryAudit[]>('/api/stock/audits'),
+  createInventoryAudit: (items: any[], performedBy: string) => fetchJson<InventoryAudit>('/api/stock/audits', {
+    method: 'POST',
+    body: JSON.stringify({ items, performedBy })
+  }),
+  createDraftInventoryAudit: (items: any[], performedBy: string) => fetchJson<InventoryAudit>('/api/stock/audits/draft', {
+    method: 'POST',
+    body: JSON.stringify({ items, performedBy })
+  }),
+  updateInventoryAudit: (id: string, updates: { items?: any[]; status?: 'draft' | 'validated' }, performedBy: string) => fetchJson<InventoryAudit>(`/api/stock/audits/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteInventoryAudit: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/stock/audits/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  correctStockMovement: (id: string, reason: string, performedBy: string) => fetchJson<StockMovement>(`/api/stock/movements/${id}/correct`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, performedBy })
+  }),
+
+  // Suppliers & OCR
+  getSuppliers: () => fetchJson<Supplier[]>('/api/suppliers'),
+  createSupplier: (data: Partial<Supplier>, performedBy: string) => fetchJson<Supplier>('/api/suppliers', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateSupplier: (id: string, updates: Partial<Supplier>, performedBy: string) => fetchJson<Supplier>(`/api/suppliers/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteSupplier: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/suppliers/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getPurchaseOrders: () => fetchJson<PurchaseOrder[]>('/api/purchase-orders'),
+  createPurchaseOrder: (data: Partial<PurchaseOrder>, performedBy: string) => fetchJson<PurchaseOrder>('/api/purchase-orders', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updatePurchaseOrder: (id: string, updates: Partial<PurchaseOrder>, performedBy: string) => fetchJson<PurchaseOrder>(`/api/purchase-orders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  cancelPurchaseOrder: (id: string, reason: string, performedBy: string) => fetchJson<PurchaseOrder>(`/api/purchase-orders/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, performedBy })
+  }),
+  receivePurchaseOrder: (id: string, performedBy: string) => fetchJson<PurchaseOrder>(`/api/purchase-orders/${id}/receive`, {
+    method: 'POST',
+    body: JSON.stringify({ performedBy })
+  }),
+  getSupplierInvoices: () => fetchJson<SupplierInvoice[]>('/api/supplier-invoices'),
+  createSupplierInvoice: (data: Partial<SupplierInvoice>, performedBy: string) => fetchJson<SupplierInvoice>('/api/supplier-invoices', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateSupplierInvoice: (id: string, updates: Partial<SupplierInvoice>, performedBy: string) => fetchJson<SupplierInvoice>(`/api/supplier-invoices/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  cancelSupplierInvoice: (id: string, reason: string, performedBy: string) => fetchJson<SupplierInvoice>(`/api/supplier-invoices/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, performedBy })
+  }),
+  deleteSupplierInvoice: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/supplier-invoices/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  paySupplierInvoice: (id: string, paymentMethod: string, performedBy: string) => fetchJson<SupplierInvoice>(`/api/supplier-invoices/${id}/pay`, {
+    method: 'POST',
+    body: JSON.stringify({ paymentMethod, performedBy })
+  }),
+  analyzeInvoiceOCR: (payload: { imageBase64?: string; text?: string; mimeType?: string }) => fetchJson<any>('/api/ocr/analyze-invoice', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+
+  // HR
+  getShifts: (start?: string, end?: string) => {
+    const q = start && end ? `?start=${start}&end=${end}` : '';
+    return fetchJson<Shift[]>(`/api/hr/shifts${q}`);
+  },
+  createShift: (data: Partial<Shift>, performedBy: string) => fetchJson<Shift>('/api/hr/shifts', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateShift: (id: string, updates: Partial<Shift>, performedBy: string) => fetchJson<Shift>(`/api/hr/shifts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteShift: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/hr/shifts/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getAttendances: (date?: string) => fetchJson<AttendanceRecord[]>(`/api/hr/attendances${date ? `?date=${date}` : ''}`),
+  clockIn: (employeeId: string, performedBy: string) => fetchJson<AttendanceRecord>('/api/hr/attendance/clock-in', {
+    method: 'POST',
+    body: JSON.stringify({ employeeId, performedBy })
+  }),
+  clockOut: (employeeId: string, breakMinutes: number, notes?: string, performedBy?: string) => fetchJson<AttendanceRecord>('/api/hr/attendance/clock-out', {
+    method: 'POST',
+    body: JSON.stringify({ employeeId, breakMinutes, notes, performedBy })
+  }),
+  getLeaves: () => fetchJson<LeaveRequest[]>('/api/hr/leaves'),
+  createLeave: (data: Partial<LeaveRequest>, performedBy: string) => fetchJson<LeaveRequest>('/api/hr/leaves', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateLeaveStatus: (id: string, status: string, reviewedBy: string) => fetchJson<LeaveRequest>(`/api/hr/leaves/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, reviewedBy })
+  }),
+  deleteLeave: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/hr/leaves/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getPayrolls: () => fetchJson<PayrollRecord[]>('/api/hr/payrolls'),
+  generatePayroll: (employeeId: string, periodMonth: string, bonuses = 0, deductions = 0, performedBy: string) => fetchJson<PayrollRecord>('/api/hr/payrolls/generate', {
+    method: 'POST',
+    body: JSON.stringify({ employeeId, periodMonth, bonuses, deductions, performedBy })
+  }),
+  createManualPayroll: (data: Partial<PayrollRecord>, performedBy: string) => fetchJson<PayrollRecord>('/api/hr/payrolls/manual', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updatePayroll: (id: string, updates: Partial<PayrollRecord>, performedBy: string) => fetchJson<PayrollRecord>(`/api/hr/payrolls/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  cancelPayroll: (id: string, reason: string, performedBy: string) => fetchJson<PayrollRecord>(`/api/hr/payrolls/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, performedBy })
+  }),
+  getStaffPerformance: () => fetchJson<any[]>('/api/hr/performance'),
+
+  // Expenses
+  getExpenses: () => fetchJson<Expense[]>('/api/expenses'),
+  createExpense: (data: Partial<Expense>, performedBy: string) => fetchJson<Expense>('/api/expenses', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateExpense: (id: string, updates: Partial<Expense>, performedBy: string) => fetchJson<Expense>(`/api/expenses/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteExpense: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/expenses/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+
+  // Reports, Alerts & Journal
+  getFinancialReport: (days = 30) => fetchJson<any>(`/api/reports/financial?days=${days}`),
+  getAlerts: () => fetchJson<SystemAlert[]>('/api/alerts'),
+  markAlertRead: (id: string) => fetchJson<{ success: boolean }>(`/api/alerts/${id}/read`, { method: 'PATCH' }),
+  markAllAlertsRead: () => fetchJson<{ success: boolean }>('/api/alerts/read-all', { method: 'POST' }),
+  getJournal: () => fetchJson<JournalEntry[]>('/api/journal'),
+  getJournalLogs: () => fetchJson<JournalEntry[]>('/api/journal'),
+
+  // Convenience Aliases for UI Components
+  getEmployees: () => fetchJson<User[]>('/api/users'),
+  createEmployee: (data: Partial<User>, performedBy = 'Admin') => fetchJson<User>('/api/users', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateEmployee: (id: string, updates: Partial<User>, performedBy = 'Admin') => fetchJson<User>(`/api/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteEmployee: (id: string, performedBy = 'Admin') => fetchJson<{ success: boolean }>(`/api/users/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getAttendance: (date?: string) => fetchJson<AttendanceRecord[]>(`/api/hr/attendances${date ? `?date=${date}` : ''}`),
+  getPayroll: () => fetchJson<PayrollRecord[]>('/api/hr/payrolls'),
+  getOrder: (id: string) => fetchJson<Order>(`/api/orders/${id}`),
+  createOrder: (data: any) => fetchJson<Order>('/api/orders/qr', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  getWasteRecords: () => fetchJson<StockWaste[]>('/api/stock/wastes'),
+  createStockMovement: (data: any, performedBy = 'Admin') => fetchJson<StockMovement>('/api/stock/manual-entry', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  exportProductsCsv: async () => {
+    const products = await fetchJson<Product[]>('/api/products');
+    const headers = ['Nom', 'Catégorie', 'Prix TTC', 'TVA %', 'Station', 'Disponible'];
+    const rows = products.map(p => [
+      `"${p.name.replace(/"/g, '""')}"`,
+      `"${p.categoryId}"`,
+      p.price.toFixed(2),
+      p.tvaRate.toString(),
+      p.preparationStation,
+      p.available ? '1' : '0'
+    ].join(','));
+    return [headers.join(','), ...rows].join('\n');
+  },
+
+  // App Settings
+  getSettings: () => fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min' }>('/api/settings'),
+  updateSettings: (updates: { recipeRangeCalcMode?: 'max' | 'median' | 'min' }, performedBy: string) =>
+    fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min' }>('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ ...updates, performedBy })
+    })
+};

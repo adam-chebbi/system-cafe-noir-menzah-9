@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    --font-serif: 'Playfair Display', Georgia, serif;
+    
+    /* Strict Café Noir Color System */
+    --color-primary: #A4DEC2;
+    --color-app-bg: #F7F7F5;
+    --color-surface: #F2F3F0;
+    --color-surface-elevated: #ECEEEA;
+    --color-hover: #E3E7E3;
+    --color-border: #D9DDD8;
+    --color-border-strong: #C7CDC8;
+    --color-text-primary: #252A27;
+    --color-text-secondary: #555D58;
+    --color-text-muted: #929A95;
+    --color-primary-hover: #8BCFAE;
+    --color-primary-active: #6DBE96;
+    --color-success: #58B982;
+    --color-warning: #E5AD3E;
+    --color-error: #D96B61;
+    --color-info: #55A9C0;
+    --color-coffee: #9A8064;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #F7F7F5;
+    color: #252A27;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-sans);
+    color: #252A27;
+  }
+
+  .font-serif-brand {
+    font-family: var(--font-serif);
+  }
+}
+
+/* Custom smooth scrollbar for tablet touch and modern browsers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D9DDD8;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C7CDC8;
+}
+
+/* Touch-optimized active states */
+@media (hover: none) {
+  button:active, a:active {
+    opacity: 0.85;
+  }
+}
+
+/* Print styles for thermal POS ticket and reports */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-ticket {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    font-size: 11px !important;
+  }
+}
