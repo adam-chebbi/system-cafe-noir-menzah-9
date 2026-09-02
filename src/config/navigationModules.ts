@@ -71,18 +71,16 @@ export const NAVIGATION_MODULES: ModuleSection[] = [
   },
   {
     id: 'pos',
-    title: 'Caisse POS (Ventes)',
+    title: 'Module Ventes',
     categoryTag: 'Encaissement',
-    subtitle: 'Prise de commande tactile, clôture de caisse & règlements',
+    subtitle: 'Saisie manuelle, import Excel/CSV et historique des ventes avec traçabilité',
     icon: CreditCard,
     mainView: 'pos',
     matchingViews: ['pos'],
     shortcuts: [
-      { id: 'pos-main', label: 'Caisse Tactile', icon: CreditCard, subTab: 'pos', keywords: ['écran tactile', 'touch', 'terminal', 'vente', 'commander'] },
-      { id: 'pos-session', label: 'Clôture / Z Caisse', icon: Clock, subTab: 'register', action: 'session', keywords: ['session', 'fond de caisse', 'fermeture', 'z de caisse', 'comptage'] },
-      { id: 'pos-discount', label: 'Remises / Offert', icon: Percent, action: 'discount', keywords: ['rabais', 'réduction', 'geste commercial', 'offert', 'pourcentage'] },
-      { id: 'pos-tables', label: 'Affecter Table', icon: Grid, action: 'table_select', keywords: ['salle', 'numéro table', 'addition sur table'] },
-      { id: 'pos-takeaway', label: 'À Emporter', icon: ShoppingBag, action: 'takeaway', keywords: ['direct', 'emporter', 'takeaway', 'comptoir'] }
+      { id: 'pos-manual', label: 'Saisie Manuelle', icon: FileSpreadsheet, subTab: 'manual', keywords: ['enregistrer vente', 'saisie caissier', 'ticket', 'espèces', 'tpe', 'ticket restaurant'] },
+      { id: 'pos-import', label: 'Import Excel & CSV', icon: Download, subTab: 'import', keywords: ['import', 'excel', 'csv', 'bulk', 'en masse', 'fichier', 'xlsx'] },
+      { id: 'pos-history', label: 'Historique Ventes', icon: History, subTab: 'history', keywords: ['historique', 'tickets passés', 'annulation', 'correction', 'traçabilité', 'audit vente'] }
     ]
   },
   {

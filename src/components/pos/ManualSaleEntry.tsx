@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Product, Table, User, Sale } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Product, Table, User, Sale, PaymentMethod, ConsumptionType, SaleItem } from '../../types';
 import { api } from '../../services/api';
 import {
   Plus,
@@ -7,15 +7,16 @@ import {
   Check,
   Eye,
   ArrowLeft,
-  Upload,
-  FileSpreadsheet,
-  AlertCircle,
-  CheckCircle2,
   Calendar,
   CreditCard,
   Banknote,
-  Percent,
-  FileText
+  Receipt,
+  Utensils,
+  ShoppingBag,
+  AlertCircle,
+  FileSpreadsheet,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 
 interface ManualSaleEntryProps {
@@ -26,9 +27,10 @@ interface ManualSaleEntryProps {
   onSaleCreated: (sale: Sale) => void;
 }
 
-interface SaleLine {
+interface ManualSaleLine {
   productId?: string;
   productName: string;
+  variant?: string;
   unitPrice: number;
   quantity: number;
   tvaRate: number;
@@ -42,38 +44,34 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
   currentUser,
   onSaleCreated
 }) => {
-  const [activeTab, setActiveTab] = useState<'single' | 'csv'>('single');
-
-  // Single sale state
+  // Form State
   const [saleDate, setSaleDate] = useState<string>(new Date().toISOString().slice(0, 16));
-  const [tableNumber, setTableNumber] = useState<string>('Comptoir');
+  const [tableNumber, setTableNumber] = useState<string>('Sur place');
   const [cashierName, setCashierName] = useState<string>(currentUser?.name || 'Administrateur');
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'contactless' | 'qr_pay' | 'voucher'>('card');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('especes');
+  const [consumptionType, setConsumptionType] = useState<ConsumptionType>('sur_place');
+  const [ticketCount, setTicketCount] = useState<number>(1);
   const [discount, setDiscount] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
 
-  const [lines, setLines] = useState<SaleLine[]>([
-    { productName: '', unitPrice: 0, quantity: 1, tvaRate: 10, total: 0 }
+  const [lines, setLines] = useState<ManualSaleLine[]>([
+    { productName: '', variant: '', unitPrice: 0, quantity: 1, tvaRate: 7, total: 0 }
   ]);
 
-  // Validation step: 'edit' -> 'preview' -> 'confirmed'
+  // Validation step: 'edit' -> 'preview'
   const [step, setStep] = useState<'edit' | 'preview'>('edit');
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
-
-  // CSV Import state
-  const [csvContent, setCsvContent] = useState<string>('');
-  const [parsedCsvRows, setParsedCsvRows] = useState<any[]>([]);
-  const [csvImportResult, setCsvImportResult] = useState<any>(null);
+  const [successMsg, setSuccessMsg] = useState<string>('');
 
   // Calculations
   const rawSubtotal = lines.reduce((sum, l) => sum + (l.unitPrice * l.quantity) / (1 + l.tvaRate / 100), 0);
   const rawTotalTTC = lines.reduce((sum, l) => sum + (l.unitPrice * l.quantity), 0);
-  const finalTotalTTC = Math.max(0, Number((rawTotalTTC - discount).toFixed(2)));
-  const totalTVA = Math.max(0, Number((finalTotalTTC - rawSubtotal).toFixed(2)));
+  const finalTotalTTC = Math.max(0, Number((rawTotalTTC - discount).toFixed(3)));
+  const totalTVA = Math.max(0, Number((finalTotalTTC - rawSubtotal).toFixed(3)));
 
   const handleAddLine = () => {
-    setLines([...lines, { productName: '', unitPrice: 0, quantity: 1, tvaRate: 10, total: 0 }]);
+    setLines([...lines, { productName: '', variant: '', unitPrice: 0, quantity: 1, tvaRate: 7, total: 0 }]);
   };
 
   const handleRemoveLine = (index: number) => {
@@ -85,32 +83,67 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
     const prod = products.find(p => p.id === productId);
     const updated = [...lines];
     if (prod) {
+      const defaultVariant = prod.options && prod.options.length > 0 && prod.options[0].choices.length > 0
+        ? prod.options[0].choices[0].name
+        : '';
+      const priceModifier = prod.options && prod.options.length > 0 && prod.options[0].choices.length > 0
+        ? prod.options[0].choices[0].priceModifier || 0
+        : 0;
+
+      const finalPrice = prod.price + priceModifier;
+
       updated[index] = {
         productId: prod.id,
         productName: prod.name,
-        unitPrice: prod.price,
+        variant: defaultVariant,
+        unitPrice: finalPrice,
         quantity: updated[index].quantity || 1,
-        tvaRate: prod.tvaRate || 10,
-        total: Number(((updated[index].quantity || 1) * prod.price).toFixed(2))
+        tvaRate: prod.tvaRate || 7,
+        total: Number(((updated[index].quantity || 1) * finalPrice).toFixed(3))
       };
     }
     setLines(updated);
   };
 
-  const handleLineChange = (index: number, field: keyof SaleLine, val: any) => {
+  const handleVariantSelect = (index: number, variantName: string) => {
+    const updated = [...lines];
+    const line = updated[index];
+    line.variant = variantName;
+
+    if (line.productId) {
+      const prod = products.find(p => p.id === line.productId);
+      if (prod && prod.options) {
+        let modifier = 0;
+        for (const opt of prod.options) {
+          const choice = opt.choices.find(c => c.name === variantName);
+          if (choice) {
+            modifier = choice.priceModifier || 0;
+            break;
+          }
+        }
+        line.unitPrice = prod.price + modifier;
+        line.total = Number((line.quantity * line.unitPrice).toFixed(3));
+      }
+    }
+    setLines(updated);
+  };
+
+  const handleLineChange = (index: number, field: keyof ManualSaleLine, val: any) => {
     const updated = [...lines];
     if (field === 'quantity') {
       const q = Math.max(1, parseInt(val) || 1);
       updated[index].quantity = q;
-      updated[index].total = Number((q * updated[index].unitPrice).toFixed(2));
+      updated[index].total = Number((q * updated[index].unitPrice).toFixed(3));
     } else if (field === 'unitPrice') {
       const p = Math.max(0, parseFloat(val) || 0);
       updated[index].unitPrice = p;
-      updated[index].total = Number((updated[index].quantity * p).toFixed(2));
+      updated[index].total = Number((updated[index].quantity * p).toFixed(3));
     } else if (field === 'productName') {
       updated[index].productName = val;
+    } else if (field === 'variant') {
+      updated[index].variant = val;
     } else if (field === 'tvaRate') {
-      updated[index].tvaRate = parseFloat(val) || 10;
+      updated[index].tvaRate = parseFloat(val) || 7;
     }
     setLines(updated);
   };
@@ -119,11 +152,11 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
     setErrorMsg('');
     const invalidLine = lines.find(l => !l.productName.trim() || l.unitPrice <= 0);
     if (invalidLine) {
-      setErrorMsg('Veuillez renseigner un nom et un prix valide (> 0 DT) pour tous les articles.');
+      setErrorMsg('Veuillez renseigner un article et un prix unitaire strictement positif pour toutes les lignes.');
       return;
     }
     if (finalTotalTTC <= 0) {
-      setErrorMsg('Le total de la vente doit être strictement supérieur à 0 DT.');
+      setErrorMsg('Le montant total de la vente doit être strictement supérieur à 0 DT.');
       return;
     }
     setStep('preview');
@@ -135,30 +168,37 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
     try {
       const payload = {
         createdAt: new Date(saleDate).toISOString(),
-        tableNumber,
+        tableNumber: consumptionType === 'sur_place' ? tableNumber : 'À emporter',
+        consumptionType,
+        paymentMethod,
+        ticketCount: Math.max(1, ticketCount),
         items: lines.map(l => ({
           productId: l.productId,
           productName: l.productName,
+          variant: l.variant || undefined,
           unitPrice: l.unitPrice,
           quantity: l.quantity,
           tvaRate: l.tvaRate
         })),
         discount,
-        paymentMethod,
-        cashierId: currentUser?.id || 'usr_manual',
+        cashierId: currentUser?.id || 'usr_admin',
         cashierName: cashierName || currentUser?.name || 'Administrateur',
-        notes: notes || 'Saisie manuelle validée',
+        notes: notes || 'Saisie manuelle enregistrée',
         source: 'manual' as const
       };
 
       const createdSale = await api.createManualSale(payload);
       onSaleCreated(createdSale);
 
+      setSuccessMsg(`Vente #${createdSale.saleNumber} (${createdSale.totalAmount.toFixed(3)} DT) enregistrée avec succès !`);
+
       // Reset form
-      setLines([{ productName: '', unitPrice: 0, quantity: 1, tvaRate: 10, total: 0 }]);
+      setLines([{ productName: '', variant: '', unitPrice: 0, quantity: 1, tvaRate: 7, total: 0 }]);
       setDiscount(0);
       setNotes('');
       setStep('edit');
+
+      setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
       setErrorMsg(`Erreur d'enregistrement : ${err.message}`);
     } finally {
@@ -166,216 +206,188 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
     }
   };
 
-  // CSV Parsing
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = evt => {
-      const text = evt.target?.result as string;
-      setCsvContent(text);
-      parseCsvData(text);
-    };
-    reader.readAsText(file);
-  };
-
-  const parseCsvData = (text: string) => {
-    const rawLines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    if (rawLines.length < 2) {
-      setParsedCsvRows([]);
-      return;
-    }
-
-    const rows: any[] = [];
-    // Assume header at line 0
-    for (let i = 1; i < rawLines.length; i++) {
-      const cols = rawLines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-      if (cols.length >= 4) {
-        // Date, Table/Ref, Article, Qte, Prix, TVA, Paiement, Caissier
-        rows.push({
-          date: cols[0] || new Date().toISOString(),
-          tableNumber: cols[1] || 'Comptoir',
-          productName: cols[2] || 'Article',
-          quantity: parseInt(cols[3]) || 1,
-          unitPrice: parseFloat(cols[4]) || 0,
-          tvaRate: parseFloat(cols[5]) || 10,
-          paymentMethod: cols[6] || 'card',
-          cashierName: cols[7] || 'Import'
-        });
-      }
-    }
-    setParsedCsvRows(rows);
-  };
-
-  const handleImportCsvBatch = async () => {
-    if (parsedCsvRows.length === 0) return;
-    setLoading(true);
-    try {
-      const formattedBatch = parsedCsvRows.map(r => ({
-        date: r.date,
-        tableNumber: r.tableNumber,
-        items: [
-          {
-            productName: r.productName,
-            unitPrice: r.unitPrice,
-            quantity: r.quantity,
-            tvaRate: r.tvaRate
-          }
-        ],
-        paymentMethod: r.paymentMethod,
-        cashierName: r.cashierName
-      }));
-
-      const res = await api.importSalesBatch(formattedBatch, currentUser?.name || 'Admin');
-      setCsvImportResult(res);
-      setParsedCsvRows([]);
-      setCsvContent('');
-    } catch (err: any) {
-      setErrorMsg(`Erreur lors de l'import: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div className="h-full flex flex-col bg-[#F7F7F5] overflow-hidden">
-      {/* Tab bar */}
-      <div className="px-4 py-2.5 bg-[#F2F3F0] border-b border-[#D9DDD8] flex items-center justify-between">
-        <div className="flex bg-white p-0.5 rounded-lg border border-[#D9DDD8]">
-          <button
-            onClick={() => {
-              setActiveTab('single');
-              setStep('edit');
-            }}
-            className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all ${
-              activeTab === 'single' ? 'bg-[#252A27] text-[#A4DEC2] shadow-2xs' : 'text-[#555D58]'
-            }`}
-          >
-            Saisie Unitaire (Double Validation)
-          </button>
-          <button
-            onClick={() => setActiveTab('csv')}
-            className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all ${
-              activeTab === 'csv' ? 'bg-[#252A27] text-[#A4DEC2] shadow-2xs' : 'text-[#555D58]'
-            }`}
-          >
-            Import Fichier CSV Historique
-          </button>
+    <div className="h-full flex flex-col bg-[#F7F7F5] overflow-y-auto p-4 max-w-5xl mx-auto w-full space-y-4">
+      {/* Header Banner */}
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#D9DDD8] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="font-serif font-black text-lg text-[#252A27]">
+            Saisie Manuelle d'une Vente
+          </h2>
+          <p className="text-xs text-[#555D58]">
+            Enregistrement comptable avec traçabilité complète des articles, variantes, tickets et modes de règlement
+          </p>
         </div>
 
-        <span className="text-[11px] text-[#555D58] font-medium hidden sm:inline">
-          Module officiel de régularisation et saisie comptable Café Noir
-        </span>
+        <div className="flex items-center space-x-2">
+          <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-[#A4DEC2] text-[#252A27] border border-[#8BCFAE]">
+            Contrôle Double-Validation
+          </span>
+        </div>
       </div>
 
       {errorMsg && (
-        <div className="mx-4 mt-3 p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 flex items-center space-x-2">
+        <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 flex items-center space-x-2 animate-in fade-in">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{errorMsg}</span>
         </div>
       )}
 
-      {activeTab === 'single' ? (
-        step === 'edit' ? (
-          /* STEP 1: EDIT FORM */
-          <div className="flex-1 overflow-y-auto p-4 max-w-4xl mx-auto w-full space-y-4">
-            <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 space-y-4 shadow-2xs">
-              <h3 className="font-bold text-sm text-[#252A27] pb-2 border-b border-[#ECEEEA]">
-                1. Métadonnées de la Vente
-              </h3>
+      {successMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 flex items-center space-x-2 animate-in fade-in">
+          <Check className="w-4 h-4 flex-shrink-0" />
+          <span>{successMsg}</span>
+        </div>
+      )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#555D58]">Date et Heure :</label>
-                  <input
-                    type="datetime-local"
-                    value={saleDate}
-                    onChange={e => setSaleDate(e.target.value)}
-                    className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
-                  />
-                </div>
+      {step === 'edit' ? (
+        /* STEP 1: FORMULAIRE DE SAISIE */
+        <div className="space-y-4">
+          {/* 1. Métadonnées de la vente */}
+          <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 space-y-4 shadow-2xs">
+            <h3 className="font-serif font-bold text-sm text-[#252A27] pb-2 border-b border-[#ECEEEA]">
+              1. Paramètres & Contexte de la Vente
+            </h3>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#555D58]">Table / Destination :</label>
-                  <select
-                    value={tableNumber}
-                    onChange={e => setTableNumber(e.target.value)}
-                    className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
-                  >
-                    <option value="Comptoir">Comptoir / À emporter</option>
-                    <option value="Terrasse">Terrasse</option>
-                    <option value="Événement">Événement Privé / Traiteur</option>
-                    {tables.map(t => (
-                      <option key={t.id} value={`Table ${t.number}`}>
-                        Table {t.number} ({t.capacity} pers.)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Date & Heure */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#555D58] flex items-center space-x-1">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Date & Heure :</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={saleDate}
+                  onChange={e => setSaleDate(e.target.value)}
+                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
+                />
+              </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#555D58]">Caissier / Opérateur :</label>
-                  <select
-                    value={cashierName}
-                    onChange={e => setCashierName(e.target.value)}
-                    className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
-                  >
-                    {users.map(u => (
-                      <option key={u.id} value={u.name}>
-                        {u.name} ({u.role})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Mode de Paiement */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#555D58] flex items-center space-x-1">
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Mode de Paiement :</span>
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={e => setPaymentMethod(e.target.value as PaymentMethod)}
+                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
+                >
+                  <option value="especes">Espèces (Cash)</option>
+                  <option value="tpe">TPE (Carte Bancaire)</option>
+                  <option value="ticket_restaurant">Ticket restaurant</option>
+                </select>
+              </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#555D58]">Mode de Paiement :</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={e => setPaymentMethod(e.target.value as any)}
-                    className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
-                  >
-                    <option value="card">Carte Bancaire (CB)</option>
-                    <option value="cash">Espèces</option>
-                    <option value="contactless">Sans Contact</option>
-                    <option value="voucher">Ticket Restaurant</option>
-                    <option value="qr_pay">QR Pay</option>
-                  </select>
-                </div>
+              {/* Type de Consommation */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#555D58] flex items-center space-x-1">
+                  <Utensils className="w-3.5 h-3.5" />
+                  <span>Consommation :</span>
+                </label>
+                <select
+                  value={consumptionType}
+                  onChange={e => {
+                    const ct = e.target.value as ConsumptionType;
+                    setConsumptionType(ct);
+                    if (ct === 'a_emporter') setTableNumber('À emporter');
+                    else if (tableNumber === 'À emporter') setTableNumber('Sur place');
+                  }}
+                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
+                >
+                  <option value="sur_place">Sur place</option>
+                  <option value="a_emporter">À emporter</option>
+                </select>
+              </div>
+
+              {/* Nombre de Tickets */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#555D58] flex items-center space-x-1">
+                  <Receipt className="w-3.5 h-3.5" />
+                  <span>Nombre de Tickets :</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={ticketCount}
+                  onChange={e => setTicketCount(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-center text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
+                />
               </div>
             </div>
 
-            {/* Articles Table */}
-            <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 space-y-3 shadow-2xs">
-              <div className="flex justify-between items-center pb-2 border-b border-[#ECEEEA]">
-                <h3 className="font-bold text-sm text-[#252A27]">
-                  2. Articles & Lignes de Vente ({lines.length})
-                </h3>
-                <button
-                  type="button"
-                  onClick={handleAddLine}
-                  className="px-3 py-1.5 rounded-lg bg-[#252A27] text-[#A4DEC2] text-xs font-bold hover:bg-[#343B37] transition-colors flex items-center space-x-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Ajouter une ligne</span>
-                </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#555D58]">Table / Emplacement :</label>
+                <input
+                  type="text"
+                  value={tableNumber}
+                  onChange={e => setTableNumber(e.target.value)}
+                  placeholder="Ex: Table 4, Terrasse, Comptoir..."
+                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
+                />
               </div>
 
-              <div className="space-y-2">
-                {lines.map((line, idx) => (
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#555D58]">Opérateur / Caissier :</label>
+                <select
+                  value={cashierName}
+                  onChange={e => setCashierName(e.target.value)}
+                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
+                >
+                  {users.map(u => (
+                    <option key={u.id} value={u.name}>
+                      {u.name} ({u.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Lignes d'articles et variantes */}
+          <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 space-y-3 shadow-2xs">
+            <div className="flex justify-between items-center pb-2 border-b border-[#ECEEEA]">
+              <div>
+                <h3 className="font-serif font-bold text-sm text-[#252A27]">
+                  2. Articles, Variantes & Tarification ({lines.length})
+                </h3>
+                <p className="text-[11px] text-[#555D58]">
+                  Sélectionnez un produit de la carte ou saisissez une désignation libre avec sa variante
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAddLine}
+                className="px-3 py-1.5 rounded-xl bg-[#252A27] text-[#A4DEC2] text-xs font-bold hover:bg-[#343B37] transition-all flex items-center space-x-1 shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Ajouter un article</span>
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {lines.map((line, idx) => {
+                const selectedProd = products.find(p => p.id === line.productId);
+                const availableOptions = selectedProd?.options || [];
+
+                return (
                   <div
                     key={idx}
-                    className="p-2.5 rounded-xl bg-[#F7F7F5] border border-[#D9DDD8] grid grid-cols-12 gap-2 items-center text-xs"
+                    className="p-3 rounded-xl bg-[#F7F7F5] border border-[#D9DDD8] grid grid-cols-12 gap-2.5 items-center text-xs"
                   >
-                    {/* Catalog Quick Select */}
-                    <div className="col-span-12 md:col-span-4">
+                    {/* Catalog select */}
+                    <div className="col-span-12 sm:col-span-4">
+                      <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Produit Catalogue :</label>
                       <select
                         onChange={e => handleProductSelect(idx, e.target.value)}
                         value={line.productId || ''}
-                        className="w-full p-1.5 bg-white border border-[#D9DDD8] rounded-lg text-xs font-medium text-[#252A27]"
+                        className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-medium text-[#252A27]"
                       >
-                        <option value="">Sélectionner un produit du catalogue...</option>
+                        <option value="">-- Choisir du catalogue (ou libre) --</option>
                         {products.map(p => (
                           <option key={p.id} value={p.id}>
                             {p.name} ({p.price.toFixed(3)} DT)
@@ -384,296 +396,242 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                       </select>
                     </div>
 
-                    {/* Custom Name */}
-                    <div className="col-span-12 md:col-span-3">
+                    {/* Designation */}
+                    <div className="col-span-12 sm:col-span-3">
+                      <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Nom de l'article :</label>
                       <input
                         type="text"
-                        placeholder="Désignation de l'article"
+                        placeholder="Ex: Café Espresso, Croissant..."
                         value={line.productName}
                         onChange={e => handleLineChange(idx, 'productName', e.target.value)}
-                        className="w-full p-1.5 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
+                        className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
                       />
                     </div>
 
-                    {/* Quantity */}
-                    <div className="col-span-3 md:col-span-1">
+                    {/* Variant / Option */}
+                    <div className="col-span-6 sm:col-span-2">
+                      <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Variante :</label>
+                      {availableOptions.length > 0 ? (
+                        <select
+                          value={line.variant || ''}
+                          onChange={e => handleVariantSelect(idx, e.target.value)}
+                          className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
+                        >
+                          <option value="">Standard</option>
+                          {availableOptions.flatMap(opt =>
+                            opt.choices.map(c => (
+                              <option key={c.id} value={c.name}>
+                                {c.name} {c.priceModifier ? `(+${c.priceModifier.toFixed(3)})` : ''}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder="Simple, Grand..."
+                          value={line.variant || ''}
+                          onChange={e => handleLineChange(idx, 'variant', e.target.value)}
+                          className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
+                        />
+                      )}
+                    </div>
+
+                    {/* Quantité */}
+                    <div className="col-span-3 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-[#555D58] block mb-0.5 text-center">Qté :</label>
                       <input
                         type="number"
                         min="1"
-                        placeholder="Qté"
                         value={line.quantity}
                         onChange={e => handleLineChange(idx, 'quantity', e.target.value)}
-                        className="w-full p-1.5 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-center text-[#252A27]"
+                        className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-center text-[#252A27]"
                       />
                     </div>
 
-                    {/* Unit Price */}
-                    <div className="col-span-3 md:col-span-2">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="0.1"
-                          placeholder="Prix Unit"
-                          value={line.unitPrice || ''}
-                          onChange={e => handleLineChange(idx, 'unitPrice', e.target.value)}
-                          className="w-full p-1.5 pr-5 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-right text-[#252A27]"
-                        />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#555D58]">DT</span>
-                      </div>
+                    {/* Prix unitaire */}
+                    <div className="col-span-3 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-[#555D58] block mb-0.5 text-right">Prix :</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={line.unitPrice || ''}
+                        onChange={e => handleLineChange(idx, 'unitPrice', e.target.value)}
+                        placeholder="0.000"
+                        className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-right text-[#252A27]"
+                      />
                     </div>
 
-                    {/* Line Total & Remove */}
-                    <div className="col-span-6 md:col-span-2 flex items-center justify-between pl-2">
-                      <span className="font-bold text-sm text-[#252A27]">
-                        {line.total.toFixed(3)} DT
+                    {/* Total & Delete */}
+                    <div className="col-span-12 sm:col-span-1 flex items-center justify-between sm:justify-end sm:space-x-1.5 pt-1 sm:pt-4">
+                      <span className="font-serif font-black text-xs text-[#252A27] sm:hidden">
+                        Total: {line.total.toFixed(3)} DT
                       </span>
                       {lines.length > 1 && (
                         <button
                           type="button"
                           onClick={() => handleRemoveLine(idx)}
-                          className="p-1.5 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                          className="p-1.5 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors ml-auto"
+                          title="Supprimer cette ligne"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3. Totaux & Remises */}
+          <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-4 shadow-2xs">
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-[#555D58]">Remise exceptionnelle (DT) :</label>
+              <input
+                type="number"
+                step="0.5"
+                value={discount || ''}
+                onChange={e => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                placeholder="0.000"
+                className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27]"
+              />
+
+              <label className="text-[11px] font-bold text-[#555D58] pt-1 block">Notes & Justification :</label>
+              <textarea
+                rows={2}
+                placeholder="Ex: Facturation manuelle, événementiel, accord gérance..."
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs text-[#252A27]"
+              />
+            </div>
+
+            {/* Total box */}
+            <div className="bg-[#F7F7F5] rounded-xl p-4 border border-[#D9DDD8] space-y-2 flex flex-col justify-between">
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-[#555D58]">
+                  <span>Sous-total HT :</span>
+                  <span>{rawSubtotal.toFixed(3)} DT</span>
+                </div>
+                <div className="flex justify-between text-[#555D58]">
+                  <span>TVA (7%) :</span>
+                  <span>{totalTVA.toFixed(3)} DT</span>
+                </div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-rose-700 font-bold">
+                    <span>Remise déduite :</span>
+                    <span>-{discount.toFixed(3)} DT</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-lg font-serif font-black text-[#252A27] pt-2 border-t border-[#D9DDD8]">
+                  <span>TOTAL TTC :</span>
+                  <span>{finalTotalTTC.toFixed(3)} DT</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGoToPreview}
+                className="w-full py-2.5 rounded-xl bg-[#252A27] hover:bg-[#343B37] text-[#A4DEC2] text-xs font-bold transition-all shadow-xs flex items-center justify-center space-x-2"
+              >
+                <Eye className="w-4 h-4" />
+                <span>Prévisualiser & Vérifier la Vente</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* STEP 2: ÉCRAN DE DOUBLE VALIDATION & CONFIRMATION */
+        <div className="max-w-xl mx-auto w-full space-y-4 animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl border-2 border-[#252A27] p-5 space-y-4 shadow-xl">
+            <div className="flex items-center space-x-2 text-amber-900 bg-amber-50 p-3 rounded-xl border border-amber-300 text-xs">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-700" />
+              <span>
+                <strong>Contrôle de validation obligatoire :</strong> Veuillez vérifier les détails du ticket avant enregistrement comptable dans le système Café Noir.
+              </span>
+            </div>
+
+            {/* Ticket Preview Box */}
+            <div className="bg-[#F7F7F5] rounded-xl p-4 border border-[#D9DDD8] font-mono text-xs text-[#252A27] space-y-3">
+              <div className="text-center pb-2 border-b border-dashed border-[#C7CDC8]">
+                <h4 className="font-serif font-black text-sm text-[#252A27]">CAFÉ NOIR &bull; MENZAH 9</h4>
+                <p className="text-[10px] text-[#555D58]">{new Date(saleDate).toLocaleString('fr-FR')}</p>
+                <p className="text-[10px] text-[#555D58]">
+                  {consumptionType === 'sur_place' ? `Sur place (${tableNumber})` : 'À emporter'} &bull; Caissier: {cashierName}
+                </p>
+                <p className="text-[10px] font-bold text-[#252A27] mt-0.5">
+                  Nombre de ticket(s) : {ticketCount}
+                </p>
+              </div>
+
+              {/* Items List */}
+              <div className="space-y-1.5 py-1 border-b border-dashed border-[#C7CDC8]">
+                {lines.map((l, idx) => (
+                  <div key={idx} className="flex justify-between items-start">
+                    <div>
+                      <span>{l.quantity}x {l.productName}</span>
+                      {l.variant && (
+                        <span className="text-[10px] text-[#555D58] block ml-3">↳ Variante : {l.variant}</span>
+                      )}
+                    </div>
+                    <span className="font-bold whitespace-nowrap">{l.total.toFixed(3)} DT</span>
+                  </div>
                 ))}
               </div>
-            </div>
 
-            {/* Totals & Notes */}
-            <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-4 shadow-2xs">
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold text-[#555D58]">Remise exceptionnelle (DT) :</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={discount || ''}
-                  onChange={e => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                  placeholder="0.00"
-                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
-                />
-
-                <label className="text-[11px] font-bold text-[#555D58] pt-1 block">Notes & Justification :</label>
-                <textarea
-                  rows={2}
-                  placeholder="Ex: Facture manuelle n°104, accord gérance..."
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs text-[#252A27]"
-                />
-              </div>
-
-              {/* Totals card */}
-              <div className="bg-[#F7F7F5] rounded-xl p-4 border border-[#D9DDD8] space-y-2 flex flex-col justify-between">
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex justify-between text-[#555D58]">
-                    <span>Sous-total HT calculé :</span>
-                    <span>{rawSubtotal.toFixed(3)} DT</span>
-                  </div>
-                  <div className="flex justify-between text-[#555D58]">
-                    <span>Total TVA (7%) :</span>
-                    <span>{totalTVA.toFixed(3)} DT</span>
-                  </div>
-                  {discount > 0 && (
-                    <div className="flex justify-between text-rose-700 font-semibold">
-                      <span>Remise :</span>
-                      <span>-{discount.toFixed(3)} DT</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-base font-serif font-black text-[#252A27] pt-2 border-t border-[#D9DDD8]">
-                    <span>TOTAL TTC :</span>
-                    <span>{finalTotalTTC.toFixed(3)} DT</span>
-                  </div>
+              {/* Totals */}
+              <div className="space-y-1 pt-1 text-xs">
+                <div className="flex justify-between text-[#555D58]">
+                  <span>Sous-total HT :</span>
+                  <span>{rawSubtotal.toFixed(3)} DT</span>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleGoToPreview}
-                  className="w-full py-2.5 rounded-lg bg-[#252A27] hover:bg-[#343B37] text-[#A4DEC2] text-xs font-bold transition-all shadow-xs flex items-center justify-center space-x-1.5"
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>Prévisualiser & Vérifier la Vente</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* STEP 2: PREVIEW & DOUBLE VALIDATION SCREEN */
-          <div className="flex-1 overflow-y-auto p-4 max-w-xl mx-auto w-full space-y-4">
-            <div className="bg-white rounded-2xl border-2 border-[#252A27] p-5 space-y-4 shadow-xl animate-in zoom-in-95 duration-150">
-              <div className="flex items-center space-x-2 text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <span>
-                  <strong>Étape de confirmation obligatoire :</strong> Vérifiez attentivement les données de la vente ci-dessous avant l'enregistrement définitif.
-                </span>
-              </div>
-
-              {/* Receipt Summary Box */}
-              <div className="bg-[#F7F7F5] rounded-xl p-4 border border-[#D9DDD8] font-mono text-xs text-[#252A27] space-y-3">
-                <div className="text-center pb-2 border-b border-dashed border-[#C7CDC8]">
-                  <h4 className="font-serif font-bold text-sm">RÉCAPITULATIF SAISIE MANUELLE</h4>
-                  <p className="text-[10px] text-[#555D58]">{new Date(saleDate).toLocaleString('fr-FR')}</p>
-                  <p className="text-[10px] text-[#555D58]">Réf : {tableNumber} &bull; Par : {cashierName}</p>
+                <div className="flex justify-between text-[#555D58]">
+                  <span>TVA :</span>
+                  <span>{totalTVA.toFixed(3)} DT</span>
                 </div>
-
-                <div className="space-y-1 py-1 border-b border-dashed border-[#C7CDC8]">
-                  {lines.map((l, idx) => (
-                    <div key={idx} className="flex justify-between">
-                      <span>{l.quantity}x {l.productName} ({l.unitPrice.toFixed(3)} DT)</span>
-                      <span className="font-bold">{l.total.toFixed(3)} DT</span>
-                    </div>
-                  ))}
+                {discount > 0 && (
+                  <div className="flex justify-between text-rose-700 font-bold">
+                    <span>Remise :</span>
+                    <span>-{discount.toFixed(3)} DT</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-serif font-black text-base text-[#252A27] pt-2 border-t border-[#D9DDD8]">
+                  <span>TOTAL TTC :</span>
+                  <span>{finalTotalTTC.toFixed(3)} DT</span>
                 </div>
-
-                <div className="space-y-1 text-xs pt-1">
-                  <div className="flex justify-between text-[#555D58]">
-                    <span>Sous-total HT :</span>
-                    <span>{rawSubtotal.toFixed(3)} DT</span>
-                  </div>
-                  <div className="flex justify-between text-[#555D58]">
-                    <span>TVA :</span>
-                    <span>{totalTVA.toFixed(3)} DT</span>
-                  </div>
-                  {discount > 0 && (
-                    <div className="flex justify-between text-rose-700">
-                      <span>Remise :</span>
-                      <span>-{discount.toFixed(3)} DT</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-bold text-base text-[#252A27] pt-2 border-t border-[#D9DDD8]">
-                    <span>TOTAL TTC :</span>
-                    <span>{finalTotalTTC.toFixed(3)} DT</span>
-                  </div>
-                  <div className="flex justify-between text-[11px] text-[#555D58] pt-1">
-                    <span>Règlement :</span>
-                    <span className="font-bold uppercase">{paymentMethod}</span>
-                  </div>
-                  {notes && (
-                    <p className="text-[10px] text-[#555D58] italic pt-1">Note : {notes}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setStep('edit')}
-                  className="flex-1 py-2.5 rounded-lg bg-[#ECEEEA] text-xs font-bold text-[#252A27] border border-[#D9DDD8] hover:bg-[#D9DDD8] flex items-center justify-center space-x-1"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Modifier la Saisie</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmAndSave}
-                  disabled={loading}
-                  className="flex-1 py-2.5 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-black transition-all shadow-xs border border-[#8BCFAE] flex items-center justify-center space-x-1.5"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>{loading ? 'Enregistrement...' : 'Confirmer et Enregistrer'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      ) : (
-        /* CSV IMPORT TAB */
-        <div className="flex-1 overflow-y-auto p-4 max-w-4xl mx-auto w-full space-y-4">
-          <div className="bg-white rounded-2xl border border-[#D9DDD8] p-5 space-y-4 shadow-2xs">
-            <div>
-              <h3 className="font-bold text-sm text-[#252A27]">
-                Importation par lot de ventes historiques (CSV)
-              </h3>
-              <p className="text-xs text-[#555D58]">
-                Format attendu : Date (AAAA-MM-JJ HH:MM), Table/Ref, Article, Quantité, Prix TTC, TVA %, Mode Règlement, Caissier
-              </p>
-            </div>
-
-            <div className="border-2 border-dashed border-[#C7CDC8] rounded-xl p-6 text-center space-y-2 hover:bg-[#F7F7F5] transition-colors">
-              <Upload className="w-8 h-8 mx-auto text-[#555D58]" />
-              <p className="text-xs font-bold text-[#252A27]">
-                Déposez votre fichier .csv ou cliquez pour parcourir
-              </p>
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleCsvUpload}
-                className="hidden"
-                id="csv-file-input"
-              />
-              <label
-                htmlFor="csv-file-input"
-                className="inline-block px-4 py-2 bg-[#252A27] text-[#A4DEC2] text-xs font-bold rounded-lg cursor-pointer hover:bg-[#343B37] transition-colors shadow-2xs"
-              >
-                Sélectionner un fichier CSV
-              </label>
-            </div>
-
-            {parsedCsvRows.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-bold text-xs text-[#252A27]">
-                    Prévisualisation des lignes ({parsedCsvRows.length} vente(s) détectée(s))
-                  </h4>
-                  <span className="font-bold text-xs text-[#252A27]">
-                    Total estimé :{' '}
-                    {parsedCsvRows.reduce((sum, r) => sum + r.quantity * r.unitPrice, 0).toFixed(3)} DT
+                <div className="flex justify-between text-[11px] text-[#555D58] pt-1">
+                  <span>Règlement :</span>
+                  <span className="font-bold text-[#252A27] uppercase">
+                    {paymentMethod === 'especes' ? 'Espèces' : paymentMethod === 'tpe' ? 'TPE (Carte)' : 'Ticket restaurant'}
                   </span>
                 </div>
-
-                <div className="max-h-64 overflow-y-auto border border-[#D9DDD8] rounded-xl">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-[#F2F3F0] text-[#555D58] font-bold border-b border-[#D9DDD8]">
-                      <tr>
-                        <th className="p-2">Date</th>
-                        <th className="p-2">Table</th>
-                        <th className="p-2">Article</th>
-                        <th className="p-2 text-center">Qté</th>
-                        <th className="p-2 text-right">Prix</th>
-                        <th className="p-2">Paiement</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#ECEEEA]">
-                      {parsedCsvRows.map((r, i) => (
-                        <tr key={i} className="hover:bg-[#F7F7F5]">
-                          <td className="p-2 font-mono text-[11px]">{r.date}</td>
-                          <td className="p-2">{r.tableNumber}</td>
-                          <td className="p-2 font-bold text-[#252A27]">{r.productName}</td>
-                          <td className="p-2 text-center">{r.quantity}</td>
-                          <td className="p-2 text-right font-bold">{(r.quantity * r.unitPrice).toFixed(3)} DT</td>
-                          <td className="p-2 uppercase text-[10px]">{r.paymentMethod}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleImportCsvBatch}
-                  disabled={loading}
-                  className="w-full py-2.5 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-black transition-all shadow-xs border border-[#8BCFAE]"
-                >
-                  {loading ? 'Importation en cours...' : `Confirmer et Importer ${parsedCsvRows.length} ventes`}
-                </button>
+                {notes && (
+                  <p className="text-[10px] text-[#555D58] italic pt-1 border-t border-[#ECEEEA]">Note : {notes}</p>
+                )}
               </div>
-            )}
+            </div>
 
-            {csvImportResult && (
-              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 space-y-1">
-                <p className="font-bold flex items-center space-x-1.5">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Importation terminée avec succès !</span>
-                </p>
-                <p>
-                  {csvImportResult.importedCount} ventes enregistrées pour un chiffre d'affaires de{' '}
-                  {csvImportResult.totalAmount.toFixed(3)} DT.
-                </p>
-              </div>
-            )}
+            {/* Actions */}
+            <div className="flex space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setStep('edit')}
+                className="flex-1 py-2.5 rounded-xl bg-[#ECEEEA] text-xs font-bold text-[#252A27] border border-[#D9DDD8] hover:bg-[#D9DDD8] flex items-center justify-center space-x-1"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Modifier la saisie</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAndSave}
+                disabled={loading}
+                className="flex-1 py-2.5 rounded-xl bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-black transition-all shadow-xs border border-[#8BCFAE] flex items-center justify-center space-x-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>{loading ? 'Enregistrement...' : 'Confirmer et Enregistrer'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

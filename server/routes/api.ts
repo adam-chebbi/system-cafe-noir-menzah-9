@@ -90,6 +90,19 @@ router.get('/dashboard/metrics', (req, res) => {
   }
 });
 
+router.get('/dashboard/analytics', (req, res) => {
+  try {
+    const analytics = ReportService.getDashboardAnalytics({
+      period: req.query.period as any,
+      startDate: req.query.startDate as string,
+      endDate: req.query.endDate as string
+    });
+    res.json(analytics);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- SPACES & TABLES ---
 router.get('/spaces', (req, res) => {
   res.json(TableService.getSpaces());
@@ -543,6 +556,27 @@ router.post('/sales/import-batch', (req, res) => {
     const { sales, performedBy } = req.body;
     const result = SalesService.importSalesBatch(sales, performedBy || 'Admin');
     res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Update / Correct sale (Admin correction with audit tracking)
+router.patch('/sales/:id/edit', (req, res) => {
+  try {
+    const { reason, performedBy, ...updates } = req.body;
+    const sale = SalesService.updateSale(req.params.id, updates, reason || 'Correction administrative', performedBy || 'Admin');
+    res.json(sale);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/sales/:id', (req, res) => {
+  try {
+    const { reason, performedBy, ...updates } = req.body;
+    const sale = SalesService.updateSale(req.params.id, updates, reason || 'Correction administrative', performedBy || 'Admin');
+    res.json(sale);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

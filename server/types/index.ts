@@ -231,6 +231,46 @@ export interface Order {
   completedAt?: string;
 }
 
+export type PaymentMethod = 'especes' | 'tpe' | 'ticket_restaurant' | 'cash' | 'card' | 'contactless' | 'qr_pay' | 'voucher' | 'split';
+export type ConsumptionType = 'sur_place' | 'a_emporter';
+
+export interface SaleItem {
+  productId?: string;
+  productName: string;
+  variant?: string;
+  quantity: number;
+  unitPrice: number;
+  tvaRate?: number;
+  total: number;
+}
+
+export interface SaleEditRecord {
+  id: string;
+  modifiedAt: string;
+  modifiedBy: string;
+  reason: string;
+  previousSnapshot: {
+    items: SaleItem[];
+    subtotal: number;
+    totalAmount: number;
+    paymentMethod: string;
+    consumptionType: ConsumptionType;
+    ticketCount?: number;
+    notes?: string;
+    saleDate?: string;
+  };
+  newSnapshot: {
+    items: SaleItem[];
+    subtotal: number;
+    totalAmount: number;
+    paymentMethod: string;
+    consumptionType: ConsumptionType;
+    ticketCount?: number;
+    notes?: string;
+    saleDate?: string;
+  };
+}
+
 export interface Sale {
   id: string;
   saleNumber: string;
@@ -242,17 +282,23 @@ export interface Sale {
   totalTva: number;
   discount: number;
   totalAmount: number;
-  paymentMethod: 'cash' | 'card' | 'contactless' | 'qr_pay' | 'voucher' | 'split';
+  paymentMethod: PaymentMethod;
+  consumptionType: ConsumptionType;
+  ticketCount: number;
   splitDetails?: { method: string; amount: number }[];
   amountReceived?: number;
   changeGiven?: number;
   cashierId: string;
   cashierName: string;
   notes?: string;
-  itemsSummary: { name: string; quantity: number; unitPrice?: number; total: number }[];
+  itemsSummary: SaleItem[];
+  editHistory?: SaleEditRecord[];
   cancelled?: boolean;
   cancelReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
   createdAt: string;
+  updatedAt?: string;
   // Retroactive / historical document fields
   isRetroactive?: boolean;
   documentDate?: string;

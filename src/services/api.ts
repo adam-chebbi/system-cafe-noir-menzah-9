@@ -45,8 +45,16 @@ export const api = {
     method: 'DELETE'
   }),
 
-  // Metrics
+  // Metrics & Dashboard Analytics
   getDashboardMetrics: () => fetchJson<any>('/api/dashboard/metrics'),
+  getDashboardAnalytics: (params?: { period?: string; startDate?: string; endDate?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.period) query.set('period', params.period);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    const qs = query.toString();
+    return fetchJson<any>(`/api/dashboard/analytics${qs ? `?${qs}` : ''}`);
+  },
 
   // Spaces & Tables
   getSpaces: () => fetchJson<Space[]>('/api/spaces'),
@@ -237,6 +245,10 @@ export const api = {
   importSalesBatch: (sales: any[], performedBy: string) => fetchJson<{ importedCount: number; totalAmount: number; errors: string[] }>('/api/sales/import-batch', {
     method: 'POST',
     body: JSON.stringify({ sales, performedBy })
+  }),
+  updateSale: (id: string, updates: any, reason: string, performedBy: string) => fetchJson<Sale>(`/api/sales/${id}/edit`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, reason, performedBy })
   }),
   cancelSale: (id: string, reason: string, performedBy: string) => fetchJson<Sale>(`/api/sales/${id}/cancel`, {
     method: 'POST',
