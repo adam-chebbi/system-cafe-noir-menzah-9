@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Ingredient } from '../../types';
+import { Ingredient, StockZone, StockWaste } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSystem } from '../../context/SystemContext';
-import { Trash2, AlertTriangle, X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
+import { ZONE_LABELS, STOCK_ZONES, WASTE_REASON_OPTIONS } from '../../utils/stockZones';
 
 interface WasteModalProps {
   isOpen: boolean;
@@ -12,26 +13,20 @@ interface WasteModalProps {
   onSaved: () => void;
 }
 
-const WASTE_REASONS = [
-  'Date limite de consommation dépassée (DLC)',
-  'Erreur de préparation / Raté barista',
-  'Rupture de chaîne du froid',
-  'Casse / Emballage endommagé',
-  'Fond de lot invendable'
-];
-
 export const WasteModal: React.FC<WasteModalProps> = ({ isOpen, onClose, ingredients, onSaved }) => {
   const { currentUser } = useAuth();
   const { showRouteNotification } = useSystem();
   const [ingredientId, setIngredientId] = useState(ingredients[0]?.id || '');
+  const [zone, setZone] = useState<StockZone>('reserve_principale');
   const [quantity, setQuantity] = useState<number>(1);
-  const [reason, setReason] = useState(WASTE_REASONS[0]);
+  const [reason, setReason] = useState<StockWaste['reason']>('perte');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
   const selectedIng = ingredients.find(i => i.id === ingredientId) || ingredients[0];
+  const zoneStock = selectedIng?.stockByZone?.[zone] ?? 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,10 +37,12 @@ export const WasteModal: React.FC<WasteModalProps> = ({ isOpen, onClose, ingredi
       await api.recordWaste({
         ingredientId,
         ingredientName: selectedIng?.name || 'Ingrédient',
+        zone,
         quantity,
         unit: selectedIng?.unit || 'g',
-        reason: 'preparation_error',
-        notes: `${reason} - ${notes}`,
+        estimatedCost: Number(((selectedIng?.costPerUnit || 0) * quantity).toFixed(3)),
+        reason,
+        notes: notes || undefined,
         recordedBy: currentUser?.name || 'Staff'
       }, currentUser?.name || 'Staff');
       showRouteNotification('Perte enregistrée et stock déduit', 'success');
@@ -87,10 +84,31 @@ export const WasteModal: React.FC<WasteModalProps> = ({ isOpen, onClose, ingredi
             >
               {ingredients.map(i => (
                 <option key={i.id} value={i.id}>
-                  {i.name} (Stock actuel : {i.currentStock} {i.unit})
+                  {i.name} (Stock total : {i.currentStock} {i.unit})
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-[#252A27]">Zone concernée</label>
+            <div className="grid grid-cols-2 gap-2">
+              {STOCK_ZONES.map(z => (
+                <button
+                  key={z}
+                  type="button"
+                  onClick={() => setZone(z)}
+                  className={`p-2 rounded-lg border text-xs font-bold transition-all ${
+                    zone === z
+                      ? 'bg-[#252A27] text-[#A4DEC2] border-[#252A27]'
+                      : 'bg-white text-[#252A27] border-[#D9DDD8]'
+                  }`}
+                >
+                  {ZONE_LABELS[z]}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-[#555D58]">Stock actuel dans cette zone : {zoneStock} {selectedIng?.unit}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -122,12 +140,12 @@ export const WasteModal: React.FC<WasteModalProps> = ({ isOpen, onClose, ingredi
             <label className="text-[11px] font-bold text-[#252A27]">Motif de la perte</label>
             <select
               value={reason}
-              onChange={e => setReason(e.target.value)}
+              onChange={e => setReason(e.target.value as StockWaste['reason'])}
               className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
             >
-              {WASTE_REASONS.map(r => (
-                <option key={r} value={r}>
-                  {r}
+              {WASTE_REASON_OPTIONS.map(r => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
                 </option>
               ))}
             </select>

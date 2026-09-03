@@ -1,5 +1,5 @@
 import { db } from '../db/database.js';
-import { Sale, CashRegisterSession, CashMovement, ClosingRegisterPayload, StockMovement, Expense } from '../types/index.js';
+import { Sale, CashRegisterSession, CashMovement, ClosingRegisterPayload, StockMovement, Expense, StockZone } from '../types/index.js';
 
 export class SalesService {
   public static getSales(filter?: {
@@ -681,8 +681,14 @@ export class SalesService {
         const ingIndex = ingredients.findIndex(i => i.id === item.ingredientId);
         if (ingIndex !== -1) {
           const ing = ingredients[ingIndex];
-          const previousStock = ing.currentStock;
-          ing.currentStock = item.countedStock;
+          // Ce contrôle de clôture de caisse ne connaît pas les zones : l'écart est appliqué à la
+          // Réserve principale par défaut (zone de travail), comme tout ajustement non zoné.
+          const zone: StockZone = 'reserve_principale';
+          const previousZoneStock = ing.stockByZone[zone];
+          const delta = item.countedStock - ing.currentStock;
+          const newZoneStock = Number((previousZoneStock + delta).toFixed(4));
+          ing.stockByZone[zone] = newZoneStock;
+          ing.currentStock = Number((ing.stockByZone.reserve_principale + ing.stockByZone.depot).toFixed(4));
           ing.updatedAt = new Date().toISOString();
 
           if (item.difference !== 0) {
@@ -691,10 +697,11 @@ export class SalesService {
               ingredientId: ing.id,
               ingredientName: ing.name,
               type: 'adjustment_inventory',
+              zone,
               quantity: item.difference,
               unit: ing.unit,
-              previousStock,
-              newStock: item.countedStock,
+              previousStock: previousZoneStock,
+              newStock: newZoneStock,
               unitCost: ing.costPerUnit,
               totalValue: Math.abs(item.differenceValue),
               referenceDoc: `CLOTURE-${session.id}`,

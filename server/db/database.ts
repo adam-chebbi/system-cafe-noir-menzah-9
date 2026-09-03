@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DatabaseSchema, User, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, Supplier, SupplierInvoice, Expense, Shift, AttendanceRecord, LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession } from '../types/index.js';
+import { DatabaseSchema, User, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, Shift, AttendanceRecord, LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession } from '../types/index.js';
 
 /** Paramètres applicatifs persistants (config, non-métier) */
 export interface AppSettings {
@@ -11,10 +11,13 @@ export interface AppSettings {
    * - 'min'    : borne basse (optimiste)
    */
   recipeRangeCalcMode: 'max' | 'median' | 'min';
+  /** Délai (jours) avant péremption utilisé pour alerter, quand un produit n'a pas de délai propre. */
+  defaultExpiryAlertLeadDays: number;
 }
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
-  recipeRangeCalcMode: 'max'
+  recipeRangeCalcMode: 'max',
+  defaultExpiryAlertLeadDays: 5
 };
 
 const DB_FILE = path.resolve(process.cwd(), 'data', 'cafe_noir_db.json');
@@ -43,6 +46,8 @@ class DatabaseEngine {
             parsed[key] = seed[key] as any;
           }
         }
+        this.migrateLegacyStockData(parsed);
+        this.migrateLegacyPurchasingData(parsed);
         this.persist(parsed);
         return parsed;
       }
@@ -52,6 +57,55 @@ class DatabaseEngine {
 
     this.persist(seed);
     return seed;
+  }
+
+  /**
+   * Rétrocompatibilité : les fichiers `data/cafe_noir_db.json` générés avant l'introduction des
+   * zones de stock n'ont pas de `stockByZone`/`zone` sur les enregistrements existants. On les
+   * complète une fois pour toutes (tout l'existant est affecté à la Réserve principale, zone de
+   * travail par défaut) plutôt que de forcer une réinitialisation des données.
+   */
+  private migrateLegacyStockData(parsed: DatabaseSchema): void {
+    for (const ing of parsed.ingredients || []) {
+      if (!ing.stockByZone) {
+        ing.stockByZone = { reserve_principale: ing.currentStock || 0, depot: 0 };
+      }
+    }
+    for (const mov of parsed.stockMovements || []) {
+      if (!mov.zone) {
+        mov.zone = 'reserve_principale';
+      }
+    }
+    for (const waste of parsed.stockWastes || []) {
+      if (!(waste as any).zone) {
+        (waste as any).zone = 'reserve_principale';
+      }
+    }
+  }
+
+  /**
+   * Rétrocompatibilité : les bons de commande / factures fournisseurs créés avant les réceptions
+   * partielles et le suivi des paiements n'ont pas `receptions`/`receivedQuantity`/`paidAmount`/
+   * `payments`. On les complète à partir de leur statut existant plutôt que de perdre l'historique.
+   */
+  private migrateLegacyPurchasingData(parsed: DatabaseSchema): void {
+    for (const po of parsed.purchaseOrders || []) {
+      if (!Array.isArray(po.receptions)) po.receptions = [];
+      for (const item of po.items || []) {
+        if (item.receivedQuantity === undefined) {
+          item.receivedQuantity = po.status === 'received' ? item.quantity : 0;
+        }
+      }
+    }
+    for (const inv of parsed.supplierInvoices || []) {
+      if (inv.paidAmount === undefined) {
+        inv.paidAmount = inv.paymentStatus === 'paid' ? (inv.totalTTC || inv.totalAmount) : 0;
+      }
+      if (!Array.isArray(inv.payments)) inv.payments = [];
+      if (inv.stockUpdated && !inv.stockZone) {
+        inv.stockZone = 'reserve_principale';
+      }
+    }
   }
 
   private getSeedPlanElements(): PlanElement[] {
@@ -408,17 +462,17 @@ class DatabaseEngine {
     ];
 
     const ingredients: Ingredient[] = [
-      { id: 'ing_ethiopia_beans', name: 'Grains Éthiopie Yirgacheffe (Bio)', unit: 'kg', currentStock: 14.5, minStockThreshold: 5.0, costPerUnit: 24.5, supplierId: 'sup_terres_cafe', category: 'coffee', imageUrl: 'https://images.unsplash.com/photo-1587734195503-904fca47e0e9?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_colombia_beans', name: 'Grains Colombie Supremo Huila', unit: 'kg', currentStock: 18.0, minStockThreshold: 6.0, costPerUnit: 19.8, supplierId: 'sup_terres_cafe', category: 'coffee', imageUrl: 'https://images.unsplash.com/photo-1559056199-641a0ac8b55e?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_whole_milk', name: 'Lait Entier Bio Microfiltré', unit: 'L', currentStock: 35.0, minStockThreshold: 15.0, costPerUnit: 1.45, supplierId: 'sup_laiterie_normande', category: 'milk_dairy', imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_oat_milk', name: 'Boisson Avoine Oatly Barista', unit: 'L', currentStock: 22.0, minStockThreshold: 10.0, costPerUnit: 2.10, supplierId: 'sup_laiterie_normande', category: 'milk_dairy', imageUrl: 'https://images.unsplash.com/photo-1596797038530-2c107229654b?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_madagascar_vanilla', name: 'Sirop Vanille Bourbon Artisanale', unit: 'cl', currentStock: 180, minStockThreshold: 50, costPerUnit: 0.12, category: 'syrup', imageUrl: 'https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_caramel_salted', name: 'Caramel Beurre Salé Guérande', unit: 'g', currentStock: 2500, minStockThreshold: 800, costPerUnit: 0.018, category: 'syrup', imageUrl: 'https://images.unsplash.com/photo-1589733955941-5eeaf752f6dd?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_matcha_uji', name: 'Matcha Cérémonial Uji Kyoto', unit: 'g', currentStock: 450, minStockThreshold: 150, costPerUnit: 0.28, category: 'beverage', imageUrl: 'https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_croissant_dough', name: 'Croissants Pur Beurre Surgelés AOP', unit: 'unit', currentStock: 48, minStockThreshold: 20, costPerUnit: 0.65, supplierId: 'sup_moulins_viron', category: 'bakery', imageUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_cookie_chocolate', name: 'Pâte Cookie Chocolat Fleur de Sel', unit: 'unit', currentStock: 36, minStockThreshold: 15, costPerUnit: 0.95, category: 'bakery', imageUrl: 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_avocado_fresh', name: 'Avocats Hass Mûrs à Point', unit: 'unit', currentStock: 12, minStockThreshold: 10, costPerUnit: 1.10, category: 'fresh', imageUrl: 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
-      { id: 'ing_sourdough_bread', name: 'Pain de Campagne Levain Naturel', unit: 'unit', currentStock: 8, minStockThreshold: 4, costPerUnit: 3.20, category: 'fresh', imageUrl: 'https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' }
+      { id: 'ing_ethiopia_beans', name: 'Grains Éthiopie Yirgacheffe (Bio)', unit: 'kg', stockByZone: { reserve_principale: 9.5, depot: 5.0 }, currentStock: 14.5, minStockThreshold: 5.0, targetStock: 20, costPerUnit: 24.5, supplierId: 'sup_terres_cafe', category: 'coffee', imageUrl: 'https://images.unsplash.com/photo-1587734195503-904fca47e0e9?w=400&auto=format&fit=crop&q=80', trackLots: true, updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_colombia_beans', name: 'Grains Colombie Supremo Huila', unit: 'kg', stockByZone: { reserve_principale: 10.0, depot: 8.0 }, currentStock: 18.0, minStockThreshold: 6.0, targetStock: 24, costPerUnit: 19.8, supplierId: 'sup_terres_cafe', category: 'coffee', imageUrl: 'https://images.unsplash.com/photo-1559056199-641a0ac8b55e?w=400&auto=format&fit=crop&q=80', trackLots: true, updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_whole_milk', name: 'Lait Entier Bio Microfiltré', unit: 'L', stockByZone: { reserve_principale: 15.0, depot: 20.0 }, currentStock: 35.0, minStockThreshold: 15.0, targetStock: 40, costPerUnit: 1.45, supplierId: 'sup_laiterie_normande', category: 'milk_dairy', imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80', trackLots: true, expiryAlertLeadDays: 3, updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_oat_milk', name: 'Boisson Avoine Oatly Barista', unit: 'L', stockByZone: { reserve_principale: 12.0, depot: 10.0 }, currentStock: 22.0, minStockThreshold: 10.0, targetStock: 25, costPerUnit: 2.10, supplierId: 'sup_laiterie_normande', category: 'milk_dairy', imageUrl: 'https://images.unsplash.com/photo-1596797038530-2c107229654b?w=400&auto=format&fit=crop&q=80', trackLots: true, expiryAlertLeadDays: 7, updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_madagascar_vanilla', name: 'Sirop Vanille Bourbon Artisanale', unit: 'cl', stockByZone: { reserve_principale: 80, depot: 100 }, currentStock: 180, minStockThreshold: 50, targetStock: 200, costPerUnit: 0.12, category: 'syrup', imageUrl: 'https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_caramel_salted', name: 'Caramel Beurre Salé Guérande', unit: 'g', stockByZone: { reserve_principale: 1500, depot: 1000 }, currentStock: 2500, minStockThreshold: 800, targetStock: 3000, costPerUnit: 0.018, category: 'syrup', imageUrl: 'https://images.unsplash.com/photo-1589733955941-5eeaf752f6dd?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_matcha_uji', name: 'Matcha Cérémonial Uji Kyoto', unit: 'g', stockByZone: { reserve_principale: 250, depot: 200 }, currentStock: 450, minStockThreshold: 150, targetStock: 500, costPerUnit: 0.28, category: 'beverage', imageUrl: 'https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_croissant_dough', name: 'Croissants Pur Beurre Surgelés AOP', unit: 'unit', stockByZone: { reserve_principale: 28, depot: 20 }, currentStock: 48, minStockThreshold: 20, targetStock: 60, costPerUnit: 0.65, supplierId: 'sup_moulins_viron', category: 'bakery', imageUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&auto=format&fit=crop&q=80', trackLots: true, expiryAlertLeadDays: 10, updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_cookie_chocolate', name: 'Pâte Cookie Chocolat Fleur de Sel', unit: 'unit', stockByZone: { reserve_principale: 20, depot: 16 }, currentStock: 36, minStockThreshold: 15, targetStock: 40, costPerUnit: 0.95, category: 'bakery', imageUrl: 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=400&auto=format&fit=crop&q=80', updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_avocado_fresh', name: 'Avocats Hass Mûrs à Point', unit: 'unit', stockByZone: { reserve_principale: 12, depot: 0 }, currentStock: 12, minStockThreshold: 10, targetStock: 20, costPerUnit: 1.10, category: 'fresh', imageUrl: 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=400&auto=format&fit=crop&q=80', trackLots: true, expiryAlertLeadDays: 2, updatedAt: '2025-08-30T10:00:00Z' },
+      { id: 'ing_sourdough_bread', name: 'Pain de Campagne Levain Naturel', unit: 'unit', stockByZone: { reserve_principale: 8, depot: 0 }, currentStock: 8, minStockThreshold: 4, targetStock: 12, costPerUnit: 3.20, category: 'fresh', imageUrl: 'https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?w=400&auto=format&fit=crop&q=80', trackLots: true, expiryAlertLeadDays: 1, updatedAt: '2025-08-30T10:00:00Z' }
     ];
 
     const recipes: TechnicalRecipe[] = [
@@ -838,16 +892,35 @@ class DatabaseEngine {
         ingredientId: 'ing_ethiopia_beans',
         ingredientName: 'Grains Éthiopie Yirgacheffe (Bio)',
         type: 'in_reception',
+        zone: 'depot',
         quantity: 10,
         unit: 'kg',
-        previousStock: 4.5,
-        newStock: 14.5,
+        previousStock: 0,
+        newStock: 5.0,
         unitCost: 24.5,
         totalValue: 245.0,
+        origin: 'Terres de Café (fournisseur)',
+        destination: 'Dépôt',
         referenceDoc: 'FAC-2025-081',
         reason: 'Livraison hebdomadaire café vert torréfié',
         performedBy: 'Adam Mansour',
         createdAt: '2025-08-29T14:30:00Z'
+      }
+    ];
+
+    const stockLots: StockLot[] = [
+      {
+        id: 'lot_milk_1',
+        ingredientId: 'ing_whole_milk',
+        ingredientName: 'Lait Entier Bio Microfiltré',
+        zone: 'reserve_principale',
+        lotNumber: 'LOT-LAIT-0830',
+        expirationDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+        quantity: 15.0,
+        unit: 'L',
+        status: 'active',
+        receivedBy: 'Adam Mansour',
+        createdAt: '2025-08-30T08:00:00Z'
       }
     ];
 
@@ -1008,9 +1081,11 @@ class DatabaseEngine {
       stockMovements,
       stockWastes: [],
       inventoryAudits: [],
+      stockLots,
       suppliers,
       purchaseOrders: [],
       supplierInvoices: [],
+      productLabelMappings: [],
       expenses,
       shifts,
       attendances,

@@ -2,14 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSystem } from '../../context/SystemContext';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { Supplier, PurchaseOrder, SupplierInvoice, Ingredient } from '../../types';
+import { Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, Ingredient, StockZone, IngredientPurchaseHistoryEntry, ProductLabelMapping } from '../../types';
 import { InvoiceOcrModal } from './InvoiceOcrModal';
+import { ProductMappingsPanel } from './ProductMappingsPanel';
 import { CopyLinkButton } from '../common/CopyLinkButton';
 import { ItemThumbnail } from '../common/ItemThumbnail';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { AttachmentViewer, AttachmentUpload } from '../common/AttachmentViewer';
 import { SoftDeleteBadge } from '../common/SoftDeleteBadge';
 import { RetroactiveDocumentPanel, emptyRetroactiveFields, RetroactiveFields } from '../common/RetroactiveDocumentPanel';
+import { ZONE_LABELS, STOCK_ZONES } from '../../utils/stockZones';
+import { DEFAULT_TVA_RATE } from '../../utils/currency';
 import {
   Truck,
   Plus,
@@ -19,12 +22,14 @@ import {
   CheckCircle2,
   Clock,
   Phone,
+  MessageCircle,
   Mail,
   Building,
   Calendar,
   X,
   Send,
   AlertCircle,
+  AlertTriangle,
   Search,
   Check,
   ChevronRight,
@@ -32,8 +37,62 @@ import {
   Edit2,
   Trash2,
   Ban,
-  Receipt
+  Receipt,
+  PackageCheck,
+  Wallet,
+  Info,
+  Link2
 } from 'lucide-react';
+
+const PO_STATUS_LABELS: Record<PurchaseOrder['status'], { label: string; className: string }> = {
+  draft: { label: 'Brouillon', className: 'bg-[#ECEEEA] text-[#555D58] border-[#D9DDD8]' },
+  sent: { label: 'Commandée', className: 'bg-sky-50 text-sky-800 border-sky-200' },
+  partially_received: { label: 'Partiellement reçue', className: 'bg-amber-100 text-amber-900 border-amber-200' },
+  received: { label: 'Reçue', className: 'bg-emerald-100 text-emerald-900 border-emerald-200' },
+  cancelled: { label: 'Annulée', className: 'bg-rose-100 text-rose-800 border-rose-200' }
+};
+
+const PoStatusBadge: React.FC<{ status: PurchaseOrder['status'] }> = ({ status }) => {
+  const cfg = PO_STATUS_LABELS[status] || PO_STATUS_LABELS.draft;
+  return (
+    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
+};
+
+const INVOICE_STATUS_LABELS: Record<SupplierInvoice['paymentStatus'], { label: string; className: string }> = {
+  unpaid: { label: 'Non payée', className: 'bg-amber-100 text-amber-900 border-amber-200' },
+  partially_paid: { label: 'Partiellement payée', className: 'bg-sky-50 text-sky-800 border-sky-200' },
+  paid: { label: 'Payée', className: 'bg-emerald-100 text-emerald-900 border-emerald-200' }
+};
+
+const InvoiceStatusBadge: React.FC<{ status: SupplierInvoice['paymentStatus'] }> = ({ status }) => {
+  const cfg = INVOICE_STATUS_LABELS[status] || INVOICE_STATUS_LABELS.unpaid;
+  return (
+    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
+};
+
+const DueDateBadge: React.FC<{ isOverdue?: boolean; isDueSoon?: boolean; daysUntilDue?: number }> = ({ isOverdue, isDueSoon, daysUntilDue }) => {
+  if (isOverdue) {
+    return (
+      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+        <AlertTriangle className="w-2.5 h-2.5" /> En retard ({Math.abs(daysUntilDue || 0)} j)
+      </span>
+    );
+  }
+  if (isDueSoon) {
+    return (
+      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
+        <AlertTriangle className="w-2.5 h-2.5" /> Échéance dans {daysUntilDue} j
+      </span>
+    );
+  }
+  return null;
+};
 
 export const SuppliersView: React.FC = () => {
   const {
@@ -52,14 +111,15 @@ export const SuppliersView: React.FC = () => {
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
-  const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
+  const [invoices, setInvoices] = useState<SupplierInvoiceWithDueStatus[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [activeTab, setActiveTab] = useState<'suppliers' | 'orders' | 'invoices'>('suppliers');
+  const [productMappings, setProductMappings] = useState<ProductLabelMapping[]>([]);
+  const [activeTab, setActiveTab] = useState<'suppliers' | 'orders' | 'invoices' | 'mappings'>('suppliers');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
-  const [selectedInvoice, setSelectedInvoice] = useState<SupplierInvoice | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<SupplierInvoiceWithDueStatus | null>(null);
   const hasValidatedIdRef = useRef(false);
 
   // Modals
@@ -70,10 +130,12 @@ export const SuppliersView: React.FC = () => {
     name: '',
     category: 'coffee_beans' as any,
     contactPerson: '',
+    whatsapp: '',
     email: '',
     phone: '',
     paymentTerms: '30 jours',
-    address: ''
+    address: '',
+    taxNumber: ''
   });
 
   const [isNewPOModalOpen, setIsNewPOModalOpen] = useState(false);
@@ -89,14 +151,65 @@ export const SuppliersView: React.FC = () => {
     items: []
   });
 
+  // Historique des prix d'achat (affiché lors du choix d'un ingrédient sur une ligne de commande)
+  const [priceHistoryIngredientId, setPriceHistoryIngredientId] = useState<string | null>(null);
+  const [priceHistory, setPriceHistory] = useState<IngredientPurchaseHistoryEntry[]>([]);
+  const [priceHistoryLoading, setPriceHistoryLoading] = useState(false);
+
+  const loadPriceHistory = async (ingredientId: string) => {
+    setPriceHistoryIngredientId(ingredientId);
+    setPriceHistoryLoading(true);
+    try {
+      const rows = await api.getIngredientPurchaseHistory(ingredientId);
+      setPriceHistory(rows);
+    } catch (err) {
+      console.error('Failed to load purchase history:', err);
+      setPriceHistory([]);
+    } finally {
+      setPriceHistoryLoading(false);
+    }
+  };
+
+  // Reception Modal (réception partielle ou totale d'un bon de commande)
+  const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
+  const [receiveLines, setReceiveLines] = useState<{ quantityReceived: number; unitCost: number }[]>([]);
+  const [receiveZone, setReceiveZone] = useState<StockZone>('reserve_principale');
+  const [receiveNote, setReceiveNote] = useState('');
+
+  const openReceiveModal = (po: PurchaseOrder) => {
+    setReceivingPO(po);
+    setReceiveLines(po.items.map(item => ({
+      quantityReceived: Number((item.quantity - (item.receivedQuantity || 0)).toFixed(4)),
+      unitCost: item.expectedUnitCost
+    })));
+    setReceiveZone('reserve_principale');
+    setReceiveNote('');
+  };
+
+  // Paiement Facture Modal (règlement total ou partiel, historique conservé)
+  const [payingInvoice, setPayingInvoice] = useState<SupplierInvoiceWithDueStatus | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentMethodInput, setPaymentMethodInput] = useState('Virement bancaire');
+  const [paymentNotes, setPaymentNotes] = useState('');
+
+  const openPaymentModal = (inv: SupplierInvoiceWithDueStatus) => {
+    const remaining = Number(((inv.totalTTC || inv.totalAmount) - (inv.paidAmount || 0)).toFixed(3));
+    setPayingInvoice(inv);
+    setPaymentAmount(Math.max(0, remaining));
+    setPaymentMethodInput(inv.paymentMethod || 'Virement bancaire');
+    setPaymentNotes('');
+  };
+
   // Retroactive Invoice Modal
   const [isRetroInvoiceModalOpen, setIsRetroInvoiceModalOpen] = useState(false);
   const [retroInvoiceSupplierId, setRetroInvoiceSupplierId] = useState('');
+  const [retroInvoicePOId, setRetroInvoicePOId] = useState('');
   const [retroInvoiceNumber, setRetroInvoiceNumber] = useState('');
   const [retroInvoiceDueDate, setRetroInvoiceDueDate] = useState('');
   const [retroInvoiceSubtotal, setRetroInvoiceSubtotal] = useState(0);
   const [retroInvoiceTva, setRetroInvoiceTva] = useState(0);
   const [retroInvoiceTotal, setRetroInvoiceTotal] = useState(0);
+  const [retroInvoiceAlreadyPaid, setRetroInvoiceAlreadyPaid] = useState(true);
   const [retroFields, setRetroFields] = useState<RetroactiveFields>(emptyRetroactiveFields());
 
   // Edit Invoice Modal
@@ -113,7 +226,7 @@ export const SuppliersView: React.FC = () => {
     dueDate: '',
     totalAmount: 0,
     paymentStatus: 'unpaid',
-    paymentMethod: 'Virement SEPA'
+    paymentMethod: 'Virement bancaire'
   });
 
   // Confirm Dialogs
@@ -139,6 +252,7 @@ export const SuppliersView: React.FC = () => {
     if (currentSubTab === 'suppliers') setActiveTab('suppliers');
     else if (currentSubTab === 'orders') setActiveTab('orders');
     else if (currentSubTab === 'invoices') setActiveTab('invoices');
+    else if (currentSubTab === 'mappings') setActiveTab('mappings');
 
     if (currentAction === 'ocr_modal') setIsOcrModalOpen(true);
     else if (currentAction === 'new_supplier') openCreateSupplierModal();
@@ -151,16 +265,18 @@ export const SuppliersView: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [sups, pos, invs, ings] = await Promise.all([
+      const [sups, pos, invs, ings, mappings] = await Promise.all([
         api.getSuppliers(),
         api.getPurchaseOrders(),
         api.getSupplierInvoices(),
-        api.getIngredients()
+        api.getIngredients(),
+        api.getProductMappings()
       ]);
       setSuppliers(sups);
       setPurchaseOrders(pos);
       setInvoices(invs);
       setIngredients(ings);
+      setProductMappings(mappings);
 
       // Deep link ID handling
       if (currentRecordId) {
@@ -218,10 +334,12 @@ export const SuppliersView: React.FC = () => {
       name: '',
       category: 'coffee_beans' as any,
       contactPerson: '',
+      whatsapp: '',
       email: '',
       phone: '',
       paymentTerms: '30 jours',
-      address: ''
+      address: '',
+      taxNumber: ''
     });
     setIsNewSupplierModalOpen(true);
   };
@@ -232,10 +350,12 @@ export const SuppliersView: React.FC = () => {
       name: sup.name,
       category: sup.category,
       contactPerson: sup.contactPerson || '',
+      whatsapp: sup.whatsapp || '',
       email: sup.email || '',
       phone: sup.phone || '',
       paymentTerms: sup.paymentTerms || '30 jours',
-      address: sup.address || ''
+      address: sup.address || '',
+      taxNumber: sup.taxNumber || ''
     });
     setIsNewSupplierModalOpen(true);
   };
@@ -255,10 +375,12 @@ export const SuppliersView: React.FC = () => {
           name: supplierFormData.name,
           category: (supplierFormData.category as any) || 'Matières Premières',
           contactPerson: supplierFormData.contactPerson || '',
+          whatsapp: supplierFormData.whatsapp || undefined,
           email: supplierFormData.email || '',
           phone: supplierFormData.phone || '',
           paymentTerms: supplierFormData.paymentTerms || '30 jours',
           address: supplierFormData.address || '',
+          taxNumber: supplierFormData.taxNumber || undefined,
           active: true
         }, currentUser?.name || 'Admin');
         setSuppliers(prev => [created, ...prev]);
@@ -294,8 +416,7 @@ export const SuppliersView: React.FC = () => {
   };
 
   // PO Handlers
-  const handleCreatePO = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreatePO = async (status: 'draft' | 'sent') => {
     if (!newPO.supplierId || newPO.items.length === 0) {
       showRouteNotification('Veuillez ajouter au moins une ligne d’article au bon de commande', 'warning');
       return;
@@ -311,7 +432,8 @@ export const SuppliersView: React.FC = () => {
           quantity: item.quantity,
           unit: ing ? ing.unit : 'kg',
           expectedUnitCost: item.unitPrice,
-          totalCost: Number((item.quantity * item.unitPrice).toFixed(2))
+          totalCost: Number((item.quantity * item.unitPrice).toFixed(2)),
+          receivedQuantity: 0
         };
       });
 
@@ -320,9 +442,8 @@ export const SuppliersView: React.FC = () => {
       const created = await api.createPurchaseOrder({
         supplierId: newPO.supplierId,
         supplierName: sup ? sup.name : 'Fournisseur',
-        orderNumber: `PO-${Date.now().toString().slice(-6)}`,
         expectedDeliveryDate: newPO.expectedDeliveryDate,
-        status: 'sent',
+        status,
         totalAmount,
         notes: newPO.notes,
         items: poItems
@@ -337,9 +458,21 @@ export const SuppliersView: React.FC = () => {
       });
       setPurchaseOrders(prev => [created, ...prev]);
       setSelectedPO(created);
-      showRouteNotification('Bon de commande créé avec succès', 'success');
+      showRouteNotification(status === 'draft' ? 'Bon de commande enregistré en brouillon' : 'Bon de commande envoyé au fournisseur', 'success');
       triggerGlobalRefresh();
       refreshAlerts();
+    } catch (err: any) {
+      showRouteNotification(`Erreur: ${err.message}`, 'error');
+    }
+  };
+
+  const handleSendPO = async (po: PurchaseOrder) => {
+    try {
+      const updated = await api.sendPurchaseOrder(po.id, currentUser?.name || 'Admin');
+      setPurchaseOrders(prev => prev.map(p => p.id === po.id ? updated : p));
+      if (selectedPO?.id === po.id) setSelectedPO(updated);
+      showRouteNotification(`Bon ${po.orderNumber} envoyé au fournisseur`, 'success');
+      triggerGlobalRefresh();
     } catch (err: any) {
       showRouteNotification(`Erreur: ${err.message}`, 'error');
     }
@@ -368,11 +501,29 @@ export const SuppliersView: React.FC = () => {
     });
   };
 
-  const handleReceivePO = async (poId: string) => {
+  const handleSubmitReceive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!receivingPO) return;
+
+    const items = receiveLines
+      .map((line, itemIndex) => ({ itemIndex, quantityReceived: Number(line.quantityReceived) || 0, unitCost: Number(line.unitCost) || undefined }))
+      .filter(l => l.quantityReceived > 0);
+
+    if (items.length === 0) {
+      showRouteNotification('Saisissez au moins une quantité à réceptionner', 'warning');
+      return;
+    }
+
     try {
-      await api.receivePurchaseOrder(poId, currentUser?.name || 'Réceptionniste');
-      setPurchaseOrders(prev => prev.map(p => p.id === poId ? { ...p, status: 'received' } : p));
-      showRouteNotification('Réception validée et stock mis à jour', 'success');
+      const updated = await api.receivePurchaseOrder(receivingPO.id, currentUser?.name || 'Réceptionniste', {
+        items,
+        zone: receiveZone,
+        note: receiveNote || undefined
+      });
+      setPurchaseOrders(prev => prev.map(p => p.id === updated.id ? updated : p));
+      if (selectedPO?.id === updated.id) setSelectedPO(updated);
+      showRouteNotification(`Réception enregistrée (${ZONE_LABELS[receiveZone]}) — statut : ${PO_STATUS_LABELS[updated.status].label}`, 'success');
+      setReceivingPO(null);
       triggerGlobalRefresh();
       refreshAlerts();
     } catch (err: any) {
@@ -383,11 +534,13 @@ export const SuppliersView: React.FC = () => {
   // Invoice Handlers
   const openRetroInvoiceModal = () => {
     setRetroInvoiceSupplierId(suppliers.length > 0 ? suppliers[0].id : '');
+    setRetroInvoicePOId('');
     setRetroInvoiceNumber('');
     setRetroInvoiceDueDate(new Date().toISOString().split('T')[0]);
     setRetroInvoiceSubtotal(100);
-    setRetroInvoiceTva(20);
-    setRetroInvoiceTotal(120);
+    setRetroInvoiceTva(Number((100 * DEFAULT_TVA_RATE / 100).toFixed(2)));
+    setRetroInvoiceTotal(Number((100 * (1 + DEFAULT_TVA_RATE / 100)).toFixed(2)));
+    setRetroInvoiceAlreadyPaid(true);
     setRetroFields(emptyRetroactiveFields());
     setIsRetroInvoiceModalOpen(true);
   };
@@ -399,19 +552,19 @@ export const SuppliersView: React.FC = () => {
     try {
       const sup = suppliers.find(s => s.id === retroInvoiceSupplierId);
       const finalDocDate = retroFields.documentDate || new Date().toISOString().split('T')[0];
+      const total = Number(retroInvoiceTotal) || 0;
 
       const created = await api.createSupplierInvoice({
         invoiceNumber: retroInvoiceNumber,
         supplierId: retroInvoiceSupplierId,
         supplierName: sup ? sup.name : 'Fournisseur',
+        purchaseOrderId: retroInvoicePOId || undefined,
         invoiceDate: finalDocDate,
         dueDate: retroInvoiceDueDate || finalDocDate,
         subtotal: Number(retroInvoiceSubtotal) || 0,
         taxAmount: Number(retroInvoiceTva) || 0,
-        totalAmount: Number(retroInvoiceTotal) || 0,
-        paymentStatus: 'paid',
-        paymentDate: finalDocDate,
-        paymentMethod: 'Virement SEPA',
+        totalAmount: total,
+        paymentStatus: 'unpaid',
         attachmentUrl: retroFields.attachmentUrl || undefined,
         ocrProcessed: false,
         stockUpdated: retroFields.applyToStock,
@@ -421,8 +574,13 @@ export const SuppliersView: React.FC = () => {
         items: []
       }, currentUser?.name || 'Admin');
 
-      setInvoices(prev => [created, ...prev]);
-      setSelectedInvoice(created);
+      let finalInvoice: SupplierInvoice = created;
+      if (retroInvoiceAlreadyPaid && total > 0) {
+        finalInvoice = await api.paySupplierInvoice(created.id, total, 'Virement bancaire', currentUser?.name || 'Admin', 'Règlement historique (saisie rétroactive)');
+      }
+
+      setInvoices(prev => [finalInvoice as SupplierInvoiceWithDueStatus, ...prev]);
+      setSelectedInvoice(finalInvoice as SupplierInvoiceWithDueStatus);
       showRouteNotification('Facture historique enregistrée avec succès', 'success');
       setIsRetroInvoiceModalOpen(false);
       triggerGlobalRefresh();
@@ -438,7 +596,7 @@ export const SuppliersView: React.FC = () => {
       dueDate: inv.dueDate,
       totalAmount: inv.totalAmount || inv.totalTTC || 0,
       paymentStatus: inv.paymentStatus || 'unpaid',
-      paymentMethod: inv.paymentMethod || 'Virement SEPA'
+      paymentMethod: inv.paymentMethod || 'Virement bancaire'
     });
     setIsEditInvoiceModalOpen(true);
   };
@@ -504,11 +662,16 @@ export const SuppliersView: React.FC = () => {
     });
   };
 
-  const handlePayInvoice = async (invoiceId: string) => {
+  const handleSubmitPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payingInvoice || !(paymentAmount > 0)) return;
+
     try {
-      await api.paySupplierInvoice(invoiceId, 'Virement SEPA', currentUser?.name || 'Comptable');
-      setInvoices(prev => prev.map(i => i.id === invoiceId ? { ...i, paymentStatus: 'paid' } : i));
-      showRouteNotification('Facture marquée comme payée', 'success');
+      const updated = await api.paySupplierInvoice(payingInvoice.id, paymentAmount, paymentMethodInput, currentUser?.name || 'Comptable', paymentNotes || undefined);
+      setInvoices(prev => prev.map(i => i.id === updated.id ? { ...i, ...updated } : i));
+      if (selectedInvoice?.id === updated.id) setSelectedInvoice(prev => prev ? { ...prev, ...updated } : prev);
+      showRouteNotification(`Paiement de ${paymentAmount.toFixed(3)} DT enregistré — statut : ${INVOICE_STATUS_LABELS[updated.paymentStatus].label}`, 'success');
+      setPayingInvoice(null);
       triggerGlobalRefresh();
       refreshAlerts();
     } catch (err: any) {
@@ -521,9 +684,10 @@ export const SuppliersView: React.FC = () => {
   const safePurchaseOrders = Array.isArray(purchaseOrders) ? purchaseOrders : [];
   const q = (searchQuery || '').toLowerCase();
 
-  const totalInvoicesDue = safeInvoices
-    .filter(i => i.paymentStatus !== 'paid' && !i.cancelled)
-    .reduce((sum, i) => sum + (i.totalTTC || i.totalAmount || 0), 0);
+  const unpaidInvoices = safeInvoices.filter(i => i.paymentStatus !== 'paid' && !i.cancelled);
+  const totalInvoicesDue = unpaidInvoices.reduce((sum, i) => sum + ((i.totalTTC || i.totalAmount || 0) - (i.paidAmount || 0)), 0);
+  const overdueInvoicesCount = unpaidInvoices.filter(i => i.isOverdue).length;
+  const dueSoonInvoicesCount = unpaidInvoices.filter(i => i.isDueSoon).length;
 
   // Filtered lists
   const filteredSuppliers = safeSuppliers.filter(s =>
@@ -594,6 +758,15 @@ export const SuppliersView: React.FC = () => {
               >
                 Factures ({invoices.length})
               </button>
+              <button
+                onClick={() => { setActiveTab('mappings'); setCurrentSubTab('mappings'); }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  activeTab === 'mappings' ? 'bg-[#252A27] text-white shadow-xs' : 'text-[#555D58] hover:text-[#252A27]'
+                }`}
+              >
+                <Link2 className="w-3 h-3" />
+                <span>Correspondances ({productMappings.length})</span>
+              </button>
             </div>
 
             {/* Context Action Buttons */}
@@ -653,15 +826,42 @@ export const SuppliersView: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center space-x-3 text-xs">
-            <span className="text-[#555D58]">Factures à régler:</span>
+          <div className="flex items-center space-x-2 text-xs flex-wrap">
+            <span className="text-[#555D58]">Restant à régler:</span>
             <span className="font-mono font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
               {totalInvoicesDue.toFixed(3)} DT
             </span>
+            {overdueInvoicesCount > 0 && (
+              <button
+                onClick={() => { setActiveTab('invoices'); setCurrentSubTab('invoices'); }}
+                className="flex items-center space-x-1 font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 hover:bg-rose-100 transition-colors"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                <span>{overdueInvoicesCount} en retard</span>
+              </button>
+            )}
+            {dueSoonInvoicesCount > 0 && (
+              <button
+                onClick={() => { setActiveTab('invoices'); setCurrentSubTab('invoices'); }}
+                className="flex items-center space-x-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 hover:bg-amber-100 transition-colors"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                <span>{dueSoonInvoicesCount} échéance proche</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
+      {activeTab === 'mappings' ? (
+        <ProductMappingsPanel
+          mappings={productMappings}
+          suppliers={suppliers}
+          ingredients={ingredients}
+          onUpdated={() => api.getProductMappings().then(setProductMappings)}
+        />
+      ) : (
+      <>
       {/* Master-Detail Split Canvas */}
       <div className="flex-1 flex overflow-hidden">
         {/* Master List */}
@@ -760,10 +960,11 @@ export const SuppliersView: React.FC = () => {
                         <div className="flex items-center space-x-2 flex-wrap gap-1">
                           <h4 className="font-bold text-xs sm:text-sm text-[#252A27]">{po.orderNumber}</h4>
                           <span className="text-[10px] font-bold text-[#555D58]">&bull; {po.supplierName}</span>
-                          <SoftDeleteBadge status={po.status} cancelReason={po.cancelReason} />
+                          <PoStatusBadge status={po.status} />
                         </div>
                         <p className="text-[11px] text-[#555D58] mt-0.5">
                           Prévue: {po.expectedDeliveryDate} &bull; {po.items?.length || 0} lignes d'articles
+                          {po.receptions?.length > 0 ? ` • ${po.receptions.length} réception(s)` : ''}
                         </p>
                       </div>
                     </div>
@@ -797,7 +998,6 @@ export const SuppliersView: React.FC = () => {
             ) : (
               filteredInvoices.map(inv => {
                 const isSelected = selectedInvoice?.id === inv.id;
-                const isPaid = inv.paymentStatus === 'paid';
                 const attach = inv.attachmentUrl;
                 return (
                   <div
@@ -819,6 +1019,7 @@ export const SuppliersView: React.FC = () => {
                           <h4 className="font-bold text-xs sm:text-sm text-[#252A27]">{inv.invoiceNumber}</h4>
                           <span className="text-[10px] font-bold text-[#555D58]">&bull; {inv.supplierName}</span>
                           <SoftDeleteBadge isRetroactive={inv.isRetroactive} cancelled={inv.cancelled} cancelReason={inv.cancelReason} />
+                          {!inv.cancelled && <DueDateBadge isOverdue={inv.isOverdue} isDueSoon={inv.isDueSoon} daysUntilDue={inv.daysUntilDue} />}
                           {attach && <AttachmentViewer url={attach} filename={inv.invoiceNumber} variant="button" />}
                         </div>
                         <p className="text-[11px] text-[#555D58] mt-0.5">
@@ -832,9 +1033,7 @@ export const SuppliersView: React.FC = () => {
                         <span className="font-mono font-bold text-xs text-[#252A27] block">
                           {(inv.totalTTC || inv.totalAmount || 0).toFixed(3)} DT
                         </span>
-                        <span className={`text-[9px] font-bold ${isPaid ? 'text-emerald-700' : 'text-amber-800'}`}>
-                          {isPaid ? 'Payée' : 'En attente'}
-                        </span>
+                        <InvoiceStatusBadge status={inv.paymentStatus} />
                       </div>
                       <button
                         onClick={(e) => {
@@ -923,6 +1122,19 @@ export const SuppliersView: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#ECEEEA] text-xs">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-[#555D58] flex items-center gap-1">
+                      <MessageCircle className="w-2.5 h-2.5" /> WhatsApp
+                    </span>
+                    <p className="font-semibold text-[#252A27] mt-0.5">{selectedSupplier.whatsapp || 'Non renseigné'}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-[#555D58]">Matricule Fiscal</span>
+                    <p className="font-mono text-[#252A27] mt-0.5">{selectedSupplier.taxNumber || 'Non renseigné'}</p>
+                  </div>
+                </div>
+
                 {selectedSupplier.email && (
                   <div className="pt-2 border-t border-[#ECEEEA] text-xs">
                     <span className="text-[10px] uppercase font-bold text-[#555D58]">Email commande</span>
@@ -935,6 +1147,21 @@ export const SuppliersView: React.FC = () => {
                     <p className="text-[#252A27] mt-0.5">{selectedSupplier.address}</p>
                   </div>
                 )}
+                {selectedSupplier.notes && (
+                  <div className="pt-2 border-t border-[#ECEEEA] text-xs">
+                    <span className="text-[10px] uppercase font-bold text-[#555D58]">Notes</span>
+                    <p className="text-[#252A27] mt-0.5">{selectedSupplier.notes}</p>
+                  </div>
+                )}
+
+                {/* Historique des commandes/factures de ce fournisseur */}
+                <div className="pt-2 border-t border-[#ECEEEA] text-xs">
+                  <span className="text-[10px] uppercase font-bold text-[#555D58] block mb-1">Activité récente</span>
+                  <p className="text-[#555D58]">
+                    {safePurchaseOrders.filter(p => p.supplierId === selectedSupplier.id).length} bon(s) de commande &bull;{' '}
+                    {invoices.filter(i => i.supplierId === selectedSupplier.id).length} facture(s)
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="h-full flex items-center justify-center text-xs text-[#555D58]">
@@ -952,7 +1179,7 @@ export const SuppliersView: React.FC = () => {
                       <span className="text-[10px] uppercase font-bold text-[#555D58] tracking-wider">
                         Bon de Commande
                       </span>
-                      <SoftDeleteBadge status={selectedPO.status} cancelReason={selectedPO.cancelReason} />
+                      <PoStatusBadge status={selectedPO.status} />
                     </div>
                     <h3 className="font-mono font-bold text-base text-[#252A27]">
                       {selectedPO.orderNumber}
@@ -971,10 +1198,16 @@ export const SuppliersView: React.FC = () => {
                   </div>
                 </div>
 
+                {selectedPO.cancelReason && (
+                  <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                    Annulé : {selectedPO.cancelReason}
+                  </p>
+                )}
+
                 <div className="pt-2 border-t border-[#ECEEEA] text-xs space-y-1">
                   <p><span className="text-[#555D58]">Fournisseur:</span> <strong>{selectedPO.supplierName}</strong></p>
                   <p><span className="text-[#555D58]">Date prévue:</span> <strong>{selectedPO.expectedDeliveryDate}</strong></p>
-                  <p><span className="text-[#555D58]">Statut:</span> <strong className="uppercase">{selectedPO.status}</strong></p>
+                  {selectedPO.notes && <p><span className="text-[#555D58]">Notes:</span> <strong>{selectedPO.notes}</strong></p>}
                 </div>
 
                 <div className="pt-2 border-t border-[#ECEEEA] space-y-1.5">
@@ -982,6 +1215,8 @@ export const SuppliersView: React.FC = () => {
                   <div className="divide-y divide-[#ECEEEA] text-xs">
                     {selectedPO.items?.map((item, idx) => {
                       const ingMatch = ingredients.find(i => i.id === item.ingredientId);
+                      const received = item.receivedQuantity || 0;
+                      const isLineComplete = received >= item.quantity;
                       return (
                         <div key={idx} className="py-1.5 flex items-center justify-between gap-2">
                           <div className="flex items-center space-x-2 min-w-0">
@@ -993,7 +1228,14 @@ export const SuppliersView: React.FC = () => {
                               size="sm"
                               rounded="lg"
                             />
-                            <span className="truncate">{item.itemName} × {item.quantity} {item.unit}</span>
+                            <div className="min-w-0">
+                              <span className="truncate block">{item.itemName} × {item.quantity} {item.unit}</span>
+                              {received > 0 && (
+                                <span className={`text-[9px] font-bold ${isLineComplete ? 'text-emerald-700' : 'text-amber-800'}`}>
+                                  Reçu : {received} / {item.quantity} {item.unit}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <span className="font-mono font-bold shrink-0">{(item.totalCost || 0).toFixed(3)} DT</span>
                         </div>
@@ -1002,14 +1244,46 @@ export const SuppliersView: React.FC = () => {
                   </div>
                 </div>
 
-                {selectedPO.status !== 'received' && selectedPO.status !== 'cancelled' && (
+                {selectedPO.receptions?.length > 0 && (
+                  <div className="pt-2 border-t border-[#ECEEEA] space-y-1.5">
+                    <span className="text-[10px] uppercase font-bold text-[#555D58] block">Historique des réceptions</span>
+                    <div className="divide-y divide-[#ECEEEA] text-xs">
+                      {selectedPO.receptions.map(rcp => (
+                        <div key={rcp.id} className="py-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-[#252A27]">{rcp.date} &bull; {ZONE_LABELS[rcp.zone]}</span>
+                            <span className="text-[10px] text-[#555D58]">{rcp.performedBy}</span>
+                          </div>
+                          <p className="text-[10px] text-[#555D58]">
+                            {rcp.items.map(i => `${i.itemName} (+${i.quantityReceived} ${i.unit})`).join(', ')}
+                          </p>
+                          {rcp.note && <p className="text-[10px] text-[#555D58] italic">"{rcp.note}"</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(selectedPO.status === 'draft' || selectedPO.status === 'sent' || selectedPO.status === 'partially_received') && (
                   <div className="pt-2 border-t border-[#ECEEEA] space-y-2">
-                    <button
-                      onClick={() => handleReceivePO(selectedPO.id)}
-                      className="w-full py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold transition-colors shadow-2xs border border-[#8BCFAE]"
-                    >
-                      Valider la réception (Entrée en stock)
-                    </button>
+                    {selectedPO.status === 'draft' && (
+                      <button
+                        onClick={() => handleSendPO(selectedPO)}
+                        className="w-full py-2 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-900 text-xs font-bold transition-colors shadow-2xs border border-sky-300 flex items-center justify-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Envoyer au Fournisseur</span>
+                      </button>
+                    )}
+                    {(selectedPO.status === 'sent' || selectedPO.status === 'partially_received') && (
+                      <button
+                        onClick={() => openReceiveModal(selectedPO)}
+                        className="w-full py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold transition-colors shadow-2xs border border-[#8BCFAE] flex items-center justify-center gap-1.5"
+                      >
+                        <PackageCheck className="w-3.5 h-3.5" />
+                        <span>Réceptionner (total ou partiel)</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => handleCancelPO(selectedPO)}
                       className="w-full py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors border border-rose-200"
@@ -1036,6 +1310,8 @@ export const SuppliersView: React.FC = () => {
                         Facture Fournisseur
                       </span>
                       <SoftDeleteBadge isRetroactive={selectedInvoice.isRetroactive} cancelled={selectedInvoice.cancelled} cancelReason={selectedInvoice.cancelReason} />
+                      {!selectedInvoice.cancelled && <InvoiceStatusBadge status={selectedInvoice.paymentStatus} />}
+                      {!selectedInvoice.cancelled && <DueDateBadge isOverdue={selectedInvoice.isOverdue} isDueSoon={selectedInvoice.isDueSoon} daysUntilDue={selectedInvoice.daysUntilDue} />}
                     </div>
                     <h3 className="font-mono font-bold text-base text-[#252A27]">
                       {selectedInvoice.invoiceNumber}
@@ -1056,9 +1332,36 @@ export const SuppliersView: React.FC = () => {
 
                 <div className="pt-2 border-t border-[#ECEEEA] text-xs space-y-1">
                   <p><span className="text-[#555D58]">Fournisseur:</span> <strong>{selectedInvoice.supplierName}</strong></p>
+                  {selectedInvoice.purchaseOrderId && (
+                    <p><span className="text-[#555D58]">Bon de commande lié:</span> <strong>{purchaseOrders.find(p => p.id === selectedInvoice.purchaseOrderId)?.orderNumber || selectedInvoice.purchaseOrderId}</strong></p>
+                  )}
                   <p><span className="text-[#555D58]">Date émission:</span> <strong>{selectedInvoice.invoiceDate}</strong></p>
                   <p><span className="text-[#555D58]">Échéance:</span> <strong>{selectedInvoice.dueDate}</strong></p>
                   <p><span className="text-[#555D58]">TVA:</span> <strong>{(selectedInvoice.taxAmount || 0).toFixed(3)} DT</strong></p>
+                </div>
+
+                {/* Suivi du règlement */}
+                <div className="pt-2 border-t border-[#ECEEEA] text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#555D58]">Réglé :</span>
+                    <strong className="font-mono">{(selectedInvoice.paidAmount || 0).toFixed(3)} DT</strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#555D58]">Reste à payer :</span>
+                    <strong className="font-mono text-amber-800">
+                      {Math.max(0, (selectedInvoice.totalTTC || selectedInvoice.totalAmount || 0) - (selectedInvoice.paidAmount || 0)).toFixed(3)} DT
+                    </strong>
+                  </div>
+                  {selectedInvoice.payments?.length > 0 && (
+                    <div className="pt-1.5 border-t border-[#ECEEEA] divide-y divide-[#ECEEEA]">
+                      {selectedInvoice.payments.map(p => (
+                        <div key={p.id} className="py-1 flex items-center justify-between">
+                          <span className="text-[#555D58]">{p.date} &bull; {p.method} &bull; {p.performedBy}</span>
+                          <span className="font-mono font-bold text-emerald-700">+{p.amount.toFixed(3)} DT</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Attachment */}
@@ -1077,10 +1380,11 @@ export const SuppliersView: React.FC = () => {
                 <div className="pt-2 border-t border-[#ECEEEA] space-y-2">
                   {selectedInvoice.paymentStatus !== 'paid' && !selectedInvoice.cancelled && (
                     <button
-                      onClick={() => handlePayInvoice(selectedInvoice.id)}
-                      className="w-full py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold transition-colors shadow-2xs border border-[#8BCFAE]"
+                      onClick={() => openPaymentModal(selectedInvoice)}
+                      className="w-full py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold transition-colors shadow-2xs border border-[#8BCFAE] flex items-center justify-center gap-1.5"
                     >
-                      Marquer comme Payée (Virement SEPA)
+                      <Wallet className="w-3.5 h-3.5" />
+                      <span>Enregistrer un Paiement</span>
                     </button>
                   )}
                   <div className="flex space-x-2">
@@ -1118,6 +1422,8 @@ export const SuppliersView: React.FC = () => {
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* OCR MODAL */}
       <InvoiceOcrModal
@@ -1222,6 +1528,29 @@ export const SuppliersView: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#252A27]">WhatsApp</label>
+                  <input
+                    type="text"
+                    placeholder="+216 XX XXX XXX"
+                    value={supplierFormData.whatsapp}
+                    onChange={e => setSupplierFormData({ ...supplierFormData, whatsapp: e.target.value })}
+                    className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs text-[#252A27]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#252A27]">Matricule Fiscal</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 1234567A/A/M/000"
+                    value={supplierFormData.taxNumber}
+                    onChange={e => setSupplierFormData({ ...supplierFormData, taxNumber: e.target.value })}
+                    className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-mono text-[#252A27]"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-[#252A27]">Email Commande</label>
                 <input
@@ -1240,6 +1569,17 @@ export const SuppliersView: React.FC = () => {
                   placeholder="Adresse postale..."
                   value={supplierFormData.address}
                   onChange={e => setSupplierFormData({ ...supplierFormData, address: e.target.value })}
+                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs text-[#252A27]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#252A27]">Notes</label>
+                <input
+                  type="text"
+                  placeholder="Remarques internes..."
+                  value={supplierFormData.notes || ''}
+                  onChange={e => setSupplierFormData({ ...supplierFormData, notes: e.target.value })}
                   className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs text-[#252A27]"
                 />
               </div>
@@ -1299,7 +1639,7 @@ export const SuppliersView: React.FC = () => {
                   <label className="text-[11px] font-bold text-[#252A27]">Fournisseur</label>
                   <select
                     value={retroInvoiceSupplierId}
-                    onChange={e => setRetroInvoiceSupplierId(e.target.value)}
+                    onChange={e => { setRetroInvoiceSupplierId(e.target.value); setRetroInvoicePOId(''); }}
                     className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
                   >
                     {suppliers.map(s => (
@@ -1320,6 +1660,20 @@ export const SuppliersView: React.FC = () => {
                 </div>
               </div>
 
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#252A27]">Bon de commande lié (optionnel)</label>
+                <select
+                  value={retroInvoicePOId}
+                  onChange={e => setRetroInvoicePOId(e.target.value)}
+                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
+                >
+                  <option value="">Aucun — facture indépendante</option>
+                  {purchaseOrders.filter(p => p.supplierId === retroInvoiceSupplierId && p.status !== 'cancelled').map(p => (
+                    <option key={p.id} value={p.id}>{p.orderNumber} ({(p.totalAmount || 0).toFixed(3)} DT)</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-[#252A27]">Montant HT (DT)</label>
@@ -1329,7 +1683,7 @@ export const SuppliersView: React.FC = () => {
                     value={retroInvoiceSubtotal}
                     onChange={e => {
                       const ht = parseFloat(e.target.value) || 0;
-                      const tva = Number((ht * 0.1).toFixed(2));
+                      const tva = Number((ht * DEFAULT_TVA_RATE / 100).toFixed(2));
                       setRetroInvoiceSubtotal(ht);
                       setRetroInvoiceTva(tva);
                       setRetroInvoiceTotal(Number((ht + tva).toFixed(2)));
@@ -1373,6 +1727,16 @@ export const SuppliersView: React.FC = () => {
                   className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs text-[#252A27]"
                 />
               </div>
+
+              <label className="flex items-center space-x-2 cursor-pointer p-2 bg-white rounded-lg border border-[#D9DDD8]">
+                <input
+                  type="checkbox"
+                  checked={retroInvoiceAlreadyPaid}
+                  onChange={e => setRetroInvoiceAlreadyPaid(e.target.checked)}
+                  className="w-3.5 h-3.5"
+                />
+                <span className="text-[11px] font-bold text-[#252A27]">Cette facture a déjà été réglée intégralement</span>
+              </label>
 
               <div className="pt-2 flex space-x-2">
                 <button
@@ -1491,14 +1855,14 @@ export const SuppliersView: React.FC = () => {
                 </div>
               </div>
               <button
-                onClick={() => setIsNewPOModalOpen(false)}
+                onClick={() => { setIsNewPOModalOpen(false); setPriceHistoryIngredientId(null); }}
                 className="p-1 rounded-lg bg-[#ECEEEA] text-[#252A27] border border-[#D9DDD8]"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreatePO} className="flex-1 overflow-y-auto space-y-3 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-[#252A27]">Fournisseur</label>
@@ -1545,58 +1909,93 @@ export const SuppliersView: React.FC = () => {
 
                 <div className="space-y-1.5">
                   {newPO.items.map((line, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-[#D9DDD8]">
-                      <select
-                        value={line.ingredientId}
-                        onChange={e => {
-                          const target = ingredients.find(i => i.id === e.target.value);
-                          const copy = [...newPO.items];
-                          copy[idx] = {
-                            ...copy[idx],
-                            ingredientId: e.target.value,
-                            unitPrice: target?.costPerUnit || copy[idx].unitPrice
-                          };
-                          setNewPO({ ...newPO, items: copy });
-                        }}
-                        className="flex-1 p-1 bg-[#F7F7F5] border border-[#D9DDD8] rounded text-xs text-[#252A27]"
-                      >
-                        {ingredients.map(ing => (
-                          <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        min="1"
-                        value={line.quantity}
-                        onChange={e => {
-                          const copy = [...newPO.items];
-                          copy[idx].quantity = parseFloat(e.target.value) || 1;
-                          setNewPO({ ...newPO, items: copy });
-                        }}
-                        className="w-16 p-1 bg-[#F7F7F5] border border-[#D9DDD8] rounded text-xs text-center font-bold text-[#252A27]"
-                      />
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={line.unitPrice}
-                        onChange={e => {
-                          const copy = [...newPO.items];
-                          copy[idx].unitPrice = parseFloat(e.target.value) || 0;
-                          setNewPO({ ...newPO, items: copy });
-                        }}
-                        className="w-20 p-1 bg-[#F7F7F5] border border-[#D9DDD8] rounded text-xs text-center font-bold text-[#252A27]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const copy = [...newPO.items];
-                          copy.splice(idx, 1);
-                          setNewPO({ ...newPO, items: copy });
-                        }}
-                        className="p-1 text-[#555D58] hover:text-rose-700"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                    <div key={idx} className="p-2 bg-white rounded-lg border border-[#D9DDD8] space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={line.ingredientId}
+                          onChange={e => {
+                            const target = ingredients.find(i => i.id === e.target.value);
+                            const copy = [...newPO.items];
+                            copy[idx] = {
+                              ...copy[idx],
+                              ingredientId: e.target.value,
+                              unitPrice: target?.costPerUnit || copy[idx].unitPrice
+                            };
+                            setNewPO({ ...newPO, items: copy });
+                          }}
+                          className="flex-1 p-1 bg-[#F7F7F5] border border-[#D9DDD8] rounded text-xs text-[#252A27]"
+                        >
+                          {ingredients.map(ing => (
+                            <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min="1"
+                          value={line.quantity}
+                          onChange={e => {
+                            const copy = [...newPO.items];
+                            copy[idx].quantity = parseFloat(e.target.value) || 1;
+                            setNewPO({ ...newPO, items: copy });
+                          }}
+                          className="w-16 p-1 bg-[#F7F7F5] border border-[#D9DDD8] rounded text-xs text-center font-bold text-[#252A27]"
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={line.unitPrice}
+                          onChange={e => {
+                            const copy = [...newPO.items];
+                            copy[idx].unitPrice = parseFloat(e.target.value) || 0;
+                            setNewPO({ ...newPO, items: copy });
+                          }}
+                          className="w-20 p-1 bg-[#F7F7F5] border border-[#D9DDD8] rounded text-xs text-center font-bold text-[#252A27]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (priceHistoryIngredientId === line.ingredientId) {
+                              setPriceHistoryIngredientId(null);
+                            } else {
+                              loadPriceHistory(line.ingredientId);
+                            }
+                          }}
+                          className="p-1 text-[#555D58] hover:text-[#252A27]"
+                          title="Historique des prix d'achat (tous fournisseurs)"
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const copy = [...newPO.items];
+                            copy.splice(idx, 1);
+                            setNewPO({ ...newPO, items: copy });
+                          }}
+                          className="p-1 text-[#555D58] hover:text-rose-700"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {priceHistoryIngredientId === line.ingredientId && (
+                        <div className="p-2 bg-[#F7F7F5] rounded-lg border border-[#ECEEEA] text-[10px] space-y-1">
+                          <span className="font-bold text-[#555D58] block">Historique d'achat (tous fournisseurs)</span>
+                          {priceHistoryLoading ? (
+                            <span className="text-[#555D58]">Chargement...</span>
+                          ) : priceHistory.length === 0 ? (
+                            <span className="text-[#555D58]">Aucun achat enregistré pour cet article.</span>
+                          ) : (
+                            priceHistory.slice(0, 5).map((h, hIdx) => (
+                              <div key={hIdx} className="flex items-center justify-between">
+                                <span className="text-[#555D58]">
+                                  {new Date(h.date).toLocaleDateString('fr-FR')} &bull; {h.supplierName || 'Fournisseur inconnu'}
+                                </span>
+                                <span className="font-mono font-bold text-[#252A27]">{h.unitCost.toFixed(3)} DT</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1605,16 +2004,189 @@ export const SuppliersView: React.FC = () => {
               <div className="pt-2 flex space-x-2 border-t border-[#D9DDD8]">
                 <button
                   type="button"
-                  onClick={() => setIsNewPOModalOpen(false)}
+                  onClick={() => { setIsNewPOModalOpen(false); setPriceHistoryIngredientId(null); }}
                   className="flex-1 py-2 rounded-lg bg-[#ECEEEA] text-xs font-bold text-[#252A27] border border-[#D9DDD8]"
                 >
                   Annuler
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => handleCreatePO('draft')}
+                  className="flex-1 py-2 rounded-lg bg-white hover:bg-[#ECEEEA] text-[#252A27] text-xs font-bold border border-[#D9DDD8] transition-colors"
+                >
+                  Enregistrer en Brouillon
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCreatePO('sent')}
                   className="flex-1 py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold border border-[#8BCFAE] transition-colors shadow-2xs"
                 >
-                  Émettre Bon de Commande
+                  Envoyer au Fournisseur
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RECEPTION MODAL (réception totale ou partielle d'un bon de commande) */}
+      {receivingPO && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#F2F3F0] rounded-2xl p-5 max-w-lg w-full shadow-2xl border border-[#C7CDC8] animate-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[#D9DDD8]">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#ECEEEA] text-[#252A27] border border-[#D9DDD8] flex items-center justify-center">
+                  <PackageCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-[#252A27]">Réceptionner {receivingPO.orderNumber}</h3>
+                  <p className="text-[11px] text-[#555D58]">Ajustez les quantités si la livraison est partielle</p>
+                </div>
+              </div>
+              <button onClick={() => setReceivingPO(null)} className="p-1 rounded-lg bg-[#ECEEEA] text-[#252A27] border border-[#D9DDD8]">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitReceive} className="flex-1 overflow-y-auto space-y-3 pr-1">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#252A27]">Zone de réception</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {STOCK_ZONES.map(z => (
+                    <button
+                      key={z}
+                      type="button"
+                      onClick={() => setReceiveZone(z)}
+                      className={`p-2 rounded-lg border text-xs font-bold transition-all ${
+                        receiveZone === z ? 'bg-[#252A27] text-[#A4DEC2] border-[#252A27]' : 'bg-white text-[#252A27] border-[#D9DDD8]'
+                      }`}
+                    >
+                      {ZONE_LABELS[z]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-[#252A27] uppercase block">Quantités reçues</span>
+                {receivingPO.items.map((item, idx) => {
+                  const already = item.receivedQuantity || 0;
+                  return (
+                    <div key={idx} className="p-2 bg-white rounded-lg border border-[#D9DDD8] flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold text-[#252A27] truncate block">{item.itemName}</span>
+                        <span className="text-[10px] text-[#555D58]">Commandé : {item.quantity} {item.unit} &bull; Déjà reçu : {already} {item.unit}</span>
+                      </div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={receiveLines[idx]?.quantityReceived ?? 0}
+                        onChange={e => {
+                          const copy = [...receiveLines];
+                          copy[idx] = { ...copy[idx], quantityReceived: parseFloat(e.target.value) || 0 };
+                          setReceiveLines(copy);
+                        }}
+                        className="w-20 p-1.5 bg-[#F7F7F5] border border-[#D9DDD8] rounded text-xs text-center font-bold text-[#252A27]"
+                      />
+                      <span className="text-[10px] text-[#555D58] w-8">{item.unit}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#252A27]">Remarque (optionnel)</label>
+                <input
+                  type="text"
+                  value={receiveNote}
+                  onChange={e => setReceiveNote(e.target.value)}
+                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs text-[#252A27]"
+                />
+              </div>
+
+              <div className="pt-2 flex space-x-2 border-t border-[#D9DDD8]">
+                <button type="button" onClick={() => setReceivingPO(null)} className="flex-1 py-2 rounded-lg bg-[#ECEEEA] text-xs font-bold text-[#252A27] border border-[#D9DDD8]">
+                  Annuler
+                </button>
+                <button type="submit" className="flex-1 py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold border border-[#8BCFAE] transition-colors shadow-2xs">
+                  Valider la Réception
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PAYMENT MODAL (règlement total ou partiel d'une facture) */}
+      {payingInvoice && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#F2F3F0] rounded-2xl p-5 max-w-md w-full shadow-2xl border border-[#C7CDC8] animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[#D9DDD8]">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#ECEEEA] text-[#252A27] border border-[#D9DDD8] flex items-center justify-center">
+                  <Wallet className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-[#252A27]">Paiement — {payingInvoice.invoiceNumber}</h3>
+                  <p className="text-[11px] text-[#555D58]">
+                    Total {((payingInvoice.totalTTC || payingInvoice.totalAmount) || 0).toFixed(3)} DT &bull; Déjà réglé {(payingInvoice.paidAmount || 0).toFixed(3)} DT
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setPayingInvoice(null)} className="p-1 rounded-lg bg-[#ECEEEA] text-[#252A27] border border-[#D9DDD8]">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitPayment} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#252A27]">Montant réglé (DT)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  value={paymentAmount}
+                  onChange={e => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-center text-[#252A27]"
+                />
+                <p className="text-[10px] text-[#555D58]">
+                  Reste dû après ce paiement : {Math.max(0, ((payingInvoice.totalTTC || payingInvoice.totalAmount) || 0) - (payingInvoice.paidAmount || 0) - paymentAmount).toFixed(3)} DT
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#252A27]">Mode de paiement</label>
+                <select
+                  value={paymentMethodInput}
+                  onChange={e => setPaymentMethodInput(e.target.value)}
+                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
+                >
+                  <option value="Virement bancaire">Virement bancaire</option>
+                  <option value="Espèces">Espèces</option>
+                  <option value="Chèque">Chèque</option>
+                  <option value="Carte bancaire">Carte bancaire</option>
+                  <option value="Traite">Traite</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-[#252A27]">Note (optionnel)</label>
+                <input
+                  type="text"
+                  value={paymentNotes}
+                  onChange={e => setPaymentNotes(e.target.value)}
+                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs text-[#252A27]"
+                />
+              </div>
+
+              <div className="pt-2 flex space-x-2">
+                <button type="button" onClick={() => setPayingInvoice(null)} className="flex-1 py-2 rounded-lg bg-[#ECEEEA] text-xs font-bold text-[#252A27] border border-[#D9DDD8]">
+                  Annuler
+                </button>
+                <button type="submit" className="flex-1 py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold border border-[#8BCFAE] transition-colors shadow-2xs">
+                  Enregistrer le Paiement
                 </button>
               </div>
             </form>

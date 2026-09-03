@@ -27,7 +27,10 @@ import {
   Download,
   Percent,
   Layers,
-  ShoppingBag
+  ShoppingBag,
+  ArrowLeftRight,
+  PackageSearch,
+  Link2
 } from 'lucide-react';
 
 export interface CircularShortcut {
@@ -138,12 +141,14 @@ export const NAVIGATION_MODULES: ModuleSection[] = [
     mainView: 'stock',
     matchingViews: ['stock', 'stock_movements', 'stock_wastes', 'inventory_audit'],
     shortcuts: [
-      { id: 'stk-inventory', label: 'État des Stocks', icon: Boxes, subTab: 'inventory', keywords: ['inventaire', 'matières premières', 'grains', 'lait', 'sirop', 'réserve', 'seuil bas'] },
+      { id: 'stk-inventory', label: 'État des Stocks', icon: Boxes, subTab: 'inventory', keywords: ['inventaire', 'matières premières', 'grains', 'lait', 'sirop', 'réserve', 'dépôt', 'seuil bas'] },
       { id: 'stk-mvmts', label: 'Mouvements E/S', icon: History, subTab: 'movements', keywords: ['entrées', 'sorties', 'réappro', 'correction mouvement', 'historique stock'] },
       { id: 'stk-audits', label: 'Audits & Brouillons', icon: ScanLine, subTab: 'audits', keywords: ['comptage physique', 'inventaire mensuel', 'brouillon audit', 'écart stock'] },
       { id: 'stk-waste', label: 'Pertes & Casse', icon: AlertTriangle, subTab: 'wastes', keywords: ['démarque', 'gaspillage', 'périmé', 'déchet', 'déclaration perte'] },
+      { id: 'stk-lots', label: 'Lots & Péremptions', icon: PackageSearch, subTab: 'lots', keywords: ['lot', 'péremption', 'expiration', 'dlc', 'traçabilité'] },
       { id: 'stk-audit-action', label: 'Faire Inventaire', icon: ScanLine, action: 'audit_modal', keywords: ['lancer inventaire', 'ajustement réel'] },
       { id: 'stk-waste-action', label: 'Déclarer Perte', icon: AlertTriangle, action: 'waste_modal', keywords: ['enregistrer perte', 'casser bouteille'] },
+      { id: 'stk-transfer-action', label: 'Transférer entre Zones', icon: ArrowLeftRight, action: 'transfer_modal', keywords: ['transfert', 'dépôt vers réserve', 'déplacer stock'] },
       { id: 'stk-new-ing', label: 'Nouvelle Matière', icon: PlusCircle, action: 'new_ingredient', keywords: ['créer ingrédient', 'ajouter fourniture'] }
     ]
   },
@@ -158,8 +163,10 @@ export const NAVIGATION_MODULES: ModuleSection[] = [
     shortcuts: [
       { id: 'sup-directory', label: 'Fournisseurs', icon: Truck, subTab: 'suppliers', keywords: ['annuaire', 'contacts', 'grossistes', 'torréfacteur', 'laitier', 'modifier fournisseur'] },
       { id: 'sup-orders', label: 'Bons Commande', icon: FileText, subTab: 'orders', keywords: ['achats', 'bon de commande', 'po', 'réception', 'livraison'] },
+      { id: 'sup-new-po', label: 'Nouveau Bon de Commande', icon: PlusCircle, action: 'new_po', keywords: ['créer commande', 'nouvel achat', 'commander fournisseur'] },
       { id: 'sup-invoices', label: 'Factures', icon: Receipt, subTab: 'invoices', keywords: ['factures d achats', 'règlements', 'dépenses fournisseurs', 'historique achats'] },
       { id: 'sup-ocr', label: 'Scan Facture', icon: FileText, action: 'ocr_modal', badge: 'OCR', keywords: ['scanner', 'ocr', 'reconnaissance', 'photo facture', 'local', 'sans ia'] },
+      { id: 'sup-mappings', label: 'Correspondances Produits', icon: Link2, subTab: 'mappings', keywords: ['mapping', 'correspondance', 'libellé', 'rattachement', 'alias produit'] },
       { id: 'sup-retro', label: 'Saisie Facture Hist.', icon: History, action: 'retro-invoice', keywords: ['facture papier', 'coexistence', 'ancien fournisseur', 'rattrapage'] },
       { id: 'sup-new', label: 'Nouveau Fournisseur', icon: PlusCircle, action: 'new_supplier', keywords: ['créer fournisseur', 'ajouter grossiste'] }
     ]

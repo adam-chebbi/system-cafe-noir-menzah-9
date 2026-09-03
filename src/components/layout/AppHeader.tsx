@@ -356,7 +356,8 @@ export const AppHeader: React.FC = () => {
                       className="pt-1.5 first:pt-0 cursor-pointer hover:bg-white p-1.5 rounded-lg transition-colors"
                       onClick={() => {
                         setIsAlertsDropdownOpen(false);
-                        if (a.type === 'low_stock') navigateTo('stock', 'inventory');
+                        if (a.type === 'low_stock' || a.type === 'negative_stock') navigateTo('stock', 'inventory');
+                        if (a.type === 'lot_expiring' || a.type === 'lot_expired') navigateTo('stock', 'lots');
                         if (a.type === 'qr_order') navigateTo('orders', 'pending_qr');
                       }}
                     >

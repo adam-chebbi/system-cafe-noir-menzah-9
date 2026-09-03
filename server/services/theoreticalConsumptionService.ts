@@ -38,6 +38,8 @@ export interface TheoreticalConsumptionReport {
 export interface IngredientTheoreticalStock {
   ingredientId: string;
   ingredientName: string;
+  /** Zone comparée — toujours la Réserve principale, seule zone de consommation. */
+  zone: 'reserve_principale';
   unit: string;
   unitCost: number;
   referenceDate: string;
@@ -211,11 +213,13 @@ export class TheoreticalConsumptionService {
     const audits = (db.get('inventoryAudits') || []).filter(a => a.status === 'validated');
     const movements = db.get('stockMovements') || [];
 
-    // Dernier audit validé par ingrédient (le plus récent, par date de validation).
+    // Dernier audit validé par ingrédient, sur la zone Réserve principale uniquement (seule zone
+    // de consommation) — comparer au total mélangerait les transferts avec la vraie dérive de vente.
     const lastAuditFor = new Map<string, { date: string; stock: number }>();
     for (const audit of audits) {
       const refDate = audit.validatedAt || audit.date;
       for (const item of audit.items) {
+        if (item.zone !== 'reserve_principale') continue;
         const existing = lastAuditFor.get(item.ingredientId);
         if (!existing || new Date(refDate).getTime() > new Date(existing.date).getTime()) {
           lastAuditFor.set(item.ingredientId, { date: refDate, stock: item.countedStock });
@@ -230,12 +234,13 @@ export class TheoreticalConsumptionService {
       const ref = lastAuditFor.get(ing.id);
       const referenceSource: 'audit' | 'no_audit_baseline' = ref ? 'audit' : 'no_audit_baseline';
       const referenceDate = ref ? ref.date : (ing.updatedAt || new Date(0).toISOString());
-      const referenceStock = ref ? ref.stock : ing.currentStock;
+      const referenceStock = ref ? ref.stock : ing.stockByZone.reserve_principale;
       const refTime = new Date(referenceDate).getTime();
 
       let movementsAdjustment = 0;
       for (const m of movements) {
         if (m.ingredientId !== ing.id) continue;
+        if (m.zone !== 'reserve_principale') continue;
         if (m.type !== 'in_reception' && m.type !== 'adjustment_manual' && m.type !== 'out_waste') continue;
         if (new Date(m.createdAt).getTime() <= refTime) continue;
         movementsAdjustment += m.quantity;
@@ -257,6 +262,7 @@ export class TheoreticalConsumptionService {
       return {
         ingredientId: ing.id,
         ingredientName: ing.name,
+        zone: 'reserve_principale',
         unit: ing.unit,
         unitCost: ing.costPerUnit,
         referenceDate,
@@ -264,9 +270,10 @@ export class TheoreticalConsumptionService {
         referenceSource,
         movementsAdjustment: Number(movementsAdjustment.toFixed(4)),
         theoreticalConsumptionSinceReference: Number(theoreticalConsumptionSinceReference.toFixed(4)),
-        theoreticalStock: Number(Math.max(0, theoreticalStock).toFixed(4)),
-        currentLedgerStock: ing.currentStock,
-        ledgerDrift: Number((ing.currentStock - theoreticalStock).toFixed(4))
+        // Le stock négatif étant désormais autorisé, on ne plafonne plus la valeur théorique à 0.
+        theoreticalStock: Number(theoreticalStock.toFixed(4)),
+        currentLedgerStock: ing.stockByZone.reserve_principale,
+        ledgerDrift: Number((ing.stockByZone.reserve_principale - theoreticalStock).toFixed(4))
       };
     });
   }

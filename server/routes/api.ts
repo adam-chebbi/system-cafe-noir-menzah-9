@@ -8,6 +8,7 @@ import { TableService } from '../services/tableService.js';
 import { OrderService } from '../services/orderService.js';
 import { SalesService } from '../services/salesService.js';
 import { SupplierService } from '../services/supplierService.js';
+import { ProductMappingService } from '../services/productMappingService.js';
 import { HRService } from '../services/hrService.js';
 import { ExpenseService } from '../services/expenseService.js';
 import { ReportService } from '../services/reportService.js';
@@ -686,15 +687,48 @@ router.delete('/ingredients/:id', (req, res) => {
   }
 });
 
+router.get('/ingredients/:id/purchase-history', (req, res) => {
+  res.json(StockService.getPurchaseHistoryForIngredient(req.params.id));
+});
+
 router.get('/stock/movements', (req, res) => {
   res.json(db.get('stockMovements'));
 });
 
 router.post('/stock/manual-entry', (req, res) => {
   try {
-    const { ingredientId, quantity, unitCost, referenceDoc, reason, performedBy } = req.body;
-    const movement = StockService.addStock(ingredientId, parseFloat(quantity), parseFloat(unitCost) || 0, referenceDoc, reason, performedBy || 'Admin');
+    const { ingredientId, quantity, unitCost, referenceDoc, reason, performedBy, zone, comment, lotNumber, expirationDate } = req.body;
+    const movement = StockService.addStock({
+      ingredientId,
+      quantity: parseFloat(quantity),
+      unitCost: parseFloat(unitCost) || 0,
+      referenceDoc,
+      reason,
+      performedBy: performedBy || 'Admin',
+      zone: zone || 'reserve_principale',
+      comment,
+      lotNumber,
+      expirationDate
+    });
     res.status(201).json(movement);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/stock/transfer', (req, res) => {
+  try {
+    const { ingredientId, fromZone, toZone, quantity, reason, comment, performedBy } = req.body;
+    const result = StockService.transferStock(
+      ingredientId,
+      fromZone,
+      toZone,
+      parseFloat(quantity),
+      reason || 'Transfert entre zones',
+      comment,
+      performedBy || 'Admin'
+    );
+    res.status(201).json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -719,7 +753,12 @@ router.get('/stock/audits', (req, res) => {
 
 router.post('/stock/audits', (req, res) => {
   try {
-    const audit = StockService.createInventoryAudit(req.body.items, req.body.performedBy || 'Manager');
+    const { items, performedBy, scopeType, scopeCategory, scopeZone } = req.body;
+    const audit = StockService.createInventoryAudit(items, performedBy || 'Manager', {
+      scopeType: scopeType || 'full',
+      scopeCategory,
+      scopeZone
+    });
     res.status(201).json(audit);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -728,7 +767,12 @@ router.post('/stock/audits', (req, res) => {
 
 router.post('/stock/audits/draft', (req, res) => {
   try {
-    const audit = StockService.createDraftAudit(req.body.items, req.body.performedBy || 'Manager');
+    const { items, performedBy, scopeType, scopeCategory, scopeZone } = req.body;
+    const audit = StockService.createDraftAudit(items, performedBy || 'Manager', {
+      scopeType: scopeType || 'full',
+      scopeCategory,
+      scopeZone
+    });
     res.status(201).json(audit);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -765,6 +809,28 @@ router.get('/stock/theoretical-consumption', (req, res) => {
 router.get('/stock/theoretical-stock', (req, res) => {
   try {
     res.json(TheoreticalConsumptionService.computeTheoreticalStock());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/stock/lots', (req, res) => {
+  res.json(StockService.getAllLots());
+});
+
+router.post('/stock/lots', (req, res) => {
+  try {
+    const lot = StockService.createLot(req.body, req.body.performedBy || 'Admin');
+    res.status(201).json(lot);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/stock/lots/:id', (req, res) => {
+  try {
+    const lot = StockService.updateLot(req.params.id, req.body, req.body.performedBy || 'Admin');
+    res.json(lot);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -844,9 +910,23 @@ router.post('/purchase-orders/:id/cancel', (req, res) => {
   }
 });
 
+router.post('/purchase-orders/:id/send', (req, res) => {
+  try {
+    const po = SupplierService.sendPurchaseOrder(req.params.id, req.body.performedBy || 'Admin');
+    res.json(po);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Réception d'un bon de commande : `items` (liste {itemIndex, quantityReceived, unitCost?}) pour une
+// réception partielle/ligne par ligne ; sans `items`, réceptionne d'un coup tout ce qui reste à recevoir.
 router.post('/purchase-orders/:id/receive', (req, res) => {
   try {
-    const po = SupplierService.receivePurchaseOrder(req.params.id, req.body.performedBy || 'Staff');
+    const { items, zone, note, performedBy } = req.body;
+    const po = Array.isArray(items) && items.length > 0
+      ? SupplierService.receivePurchaseOrderPartial(req.params.id, items, zone || 'reserve_principale', performedBy || 'Staff', note)
+      : SupplierService.receivePurchaseOrder(req.params.id, performedBy || 'Staff', zone || 'reserve_principale');
     res.json(po);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -896,8 +976,48 @@ router.delete('/supplier-invoices/:id', (req, res) => {
 
 router.post('/supplier-invoices/:id/pay', (req, res) => {
   try {
-    const invoice = SupplierService.payInvoice(req.params.id, req.body.paymentMethod || 'Virement', req.body.performedBy || 'Admin');
+    const { amount, paymentMethod, performedBy, notes } = req.body;
+    const invoice = SupplierService.recordInvoicePayment(req.params.id, parseFloat(amount), paymentMethod || 'Virement', performedBy || 'Admin', notes);
     res.json(invoice);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- PRODUCT LABEL MAPPINGS (correspondances réutilisables libellé facture → ingrédient) ---
+router.get('/product-mappings', (req, res) => {
+  res.json(ProductMappingService.getAll(req.query.supplierId as string | undefined));
+});
+
+router.post('/product-mappings', (req, res) => {
+  try {
+    const { supplierId, supplierName, rawLabel, ingredientId, ingredientName, performedBy } = req.body;
+    const mapping = ProductMappingService.upsertMapping({ supplierId, supplierName, rawLabel, ingredientId, ingredientName }, performedBy || 'Admin');
+    res.status(201).json(mapping);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/product-mappings/:id', (req, res) => {
+  try {
+    const { ingredientId, ingredientName, performedBy } = req.body;
+    const mapping = ProductMappingService.updateMapping(req.params.id, { ingredientId, ingredientName }, performedBy || 'Admin');
+    res.json(mapping);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/product-mappings/:id/apply', (req, res) => {
+  ProductMappingService.recordUsage(req.params.id);
+  res.json({ success: true });
+});
+
+router.delete('/product-mappings/:id', (req, res) => {
+  try {
+    ProductMappingService.deleteMapping(req.params.id, (req.query.performedBy as string) || 'Admin');
+    res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -1144,7 +1264,7 @@ router.get('/settings', (_req, res) => {
 
 router.patch('/settings', (req, res) => {
   try {
-    const allowed: (keyof AppSettings)[] = ['recipeRangeCalcMode'];
+    const allowed: (keyof AppSettings)[] = ['recipeRangeCalcMode', 'defaultExpiryAlertLeadDays'];
     const updates: Partial<AppSettings> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {

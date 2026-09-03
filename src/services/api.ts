@@ -1,7 +1,7 @@
 import {
   User, Space, Table, Reservation, PlanElement, TableHistoryItem, Category, Ingredient, TechnicalRecipe,
-  Product, Order, Sale, StockMovement, StockWaste, InventoryAudit,
-  Supplier, PurchaseOrder, SupplierInvoice, Expense, Shift, AttendanceRecord,
+  Product, Order, Sale, StockMovement, StockWaste, InventoryAudit, StockLot, StockZone,
+  Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, IngredientPurchaseHistoryEntry, ProductLabelMapping, Expense, Shift, AttendanceRecord,
   LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession, CashMovement,
   TheoreticalConsumptionReport, IngredientTheoreticalStock
 } from '../types/index';
@@ -320,13 +320,13 @@ export const api = {
     body: JSON.stringify({ ...data, performedBy })
   }),
   getInventoryAudits: () => fetchJson<InventoryAudit[]>('/api/stock/audits'),
-  createInventoryAudit: (items: any[], performedBy: string) => fetchJson<InventoryAudit>('/api/stock/audits', {
+  createInventoryAudit: (items: any[], performedBy: string, scope: { scopeType: InventoryAudit['scopeType']; scopeCategory?: Ingredient['category']; scopeZone?: StockZone }) => fetchJson<InventoryAudit>('/api/stock/audits', {
     method: 'POST',
-    body: JSON.stringify({ items, performedBy })
+    body: JSON.stringify({ items, performedBy, ...scope })
   }),
-  createDraftInventoryAudit: (items: any[], performedBy: string) => fetchJson<InventoryAudit>('/api/stock/audits/draft', {
+  createDraftInventoryAudit: (items: any[], performedBy: string, scope: { scopeType: InventoryAudit['scopeType']; scopeCategory?: Ingredient['category']; scopeZone?: StockZone }) => fetchJson<InventoryAudit>('/api/stock/audits/draft', {
     method: 'POST',
-    body: JSON.stringify({ items, performedBy })
+    body: JSON.stringify({ items, performedBy, ...scope })
   }),
   updateInventoryAudit: (id: string, updates: { items?: any[]; status?: 'draft' | 'validated' }, performedBy: string) => fetchJson<InventoryAudit>(`/api/stock/audits/${id}`, {
     method: 'PATCH',
@@ -338,6 +338,20 @@ export const api = {
   correctStockMovement: (id: string, reason: string, performedBy: string) => fetchJson<StockMovement>(`/api/stock/movements/${id}/correct`, {
     method: 'POST',
     body: JSON.stringify({ reason, performedBy })
+  }),
+  transferStock: (data: { ingredientId: string; fromZone: StockZone; toZone: StockZone; quantity: number; reason: string; comment?: string }, performedBy: string) =>
+    fetchJson<{ out: StockMovement; in: StockMovement }>('/api/stock/transfer', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, performedBy })
+    }),
+  getStockLots: () => fetchJson<(StockLot & { isExpired: boolean; isExpiringSoon: boolean; daysUntilExpiry: number | null })[]>('/api/stock/lots'),
+  createStockLot: (data: Partial<StockLot>, performedBy: string) => fetchJson<StockLot>('/api/stock/lots', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateStockLot: (id: string, updates: Partial<StockLot>, performedBy: string) => fetchJson<StockLot>(`/api/stock/lots/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
   }),
   getTheoreticalConsumption: (startDate?: string, endDate?: string) => {
     const query = new URLSearchParams();
@@ -374,11 +388,17 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ reason, performedBy })
   }),
-  receivePurchaseOrder: (id: string, performedBy: string) => fetchJson<PurchaseOrder>(`/api/purchase-orders/${id}/receive`, {
+  sendPurchaseOrder: (id: string, performedBy: string) => fetchJson<PurchaseOrder>(`/api/purchase-orders/${id}/send`, {
     method: 'POST',
     body: JSON.stringify({ performedBy })
   }),
-  getSupplierInvoices: () => fetchJson<SupplierInvoice[]>('/api/supplier-invoices'),
+  /** Sans `items` : réceptionne d'un coup tout ce qui reste à recevoir. Avec `items` : réception ligne par ligne (partielle ou totale). */
+  receivePurchaseOrder: (id: string, performedBy: string, options?: { items?: { itemIndex: number; quantityReceived: number; unitCost?: number }[]; zone?: StockZone; note?: string }) =>
+    fetchJson<PurchaseOrder>(`/api/purchase-orders/${id}/receive`, {
+      method: 'POST',
+      body: JSON.stringify({ performedBy, ...options })
+    }),
+  getSupplierInvoices: () => fetchJson<SupplierInvoiceWithDueStatus[]>('/api/supplier-invoices'),
   createSupplierInvoice: (data: Partial<SupplierInvoice>, performedBy: string) => fetchJson<SupplierInvoice>('/api/supplier-invoices', {
     method: 'POST',
     body: JSON.stringify({ ...data, performedBy })
@@ -394,14 +414,34 @@ export const api = {
   deleteSupplierInvoice: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/supplier-invoices/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
     method: 'DELETE'
   }),
-  paySupplierInvoice: (id: string, paymentMethod: string, performedBy: string) => fetchJson<SupplierInvoice>(`/api/supplier-invoices/${id}/pay`, {
+  paySupplierInvoice: (id: string, amount: number, paymentMethod: string, performedBy: string, notes?: string) => fetchJson<SupplierInvoice>(`/api/supplier-invoices/${id}/pay`, {
     method: 'POST',
-    body: JSON.stringify({ paymentMethod, performedBy })
+    body: JSON.stringify({ amount, paymentMethod, performedBy, notes })
+  }),
+  // Correspondances Produits (libellé facture fournisseur ↔ ingrédient de stock)
+  getProductMappings: (supplierId?: string) => fetchJson<ProductLabelMapping[]>(`/api/product-mappings${supplierId ? `?supplierId=${encodeURIComponent(supplierId)}` : ''}`),
+  upsertProductMapping: (data: { supplierId: string; supplierName: string; rawLabel: string; ingredientId: string; ingredientName: string }, performedBy: string) =>
+    fetchJson<ProductLabelMapping>('/api/product-mappings', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, performedBy })
+    }),
+  updateProductMapping: (id: string, updates: { ingredientId: string; ingredientName: string }, performedBy: string) =>
+    fetchJson<ProductLabelMapping>(`/api/product-mappings/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...updates, performedBy })
+    }),
+  recordProductMappingUsage: (id: string) => fetchJson<{ success: boolean }>(`/api/product-mappings/${id}/apply`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  }),
+  deleteProductMapping: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/product-mappings/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
   }),
   analyzeInvoiceOCR: (payload: { imageBase64?: string; text?: string; mimeType?: string }) => fetchJson<any>('/api/ocr/analyze-invoice', {
     method: 'POST',
     body: JSON.stringify(payload)
   }),
+  getIngredientPurchaseHistory: (ingredientId: string) => fetchJson<IngredientPurchaseHistoryEntry[]>(`/api/ingredients/${ingredientId}/purchase-history`),
 
   // HR
   getShifts: (start?: string, end?: string) => {
@@ -521,9 +561,9 @@ export const api = {
   },
 
   // App Settings
-  getSettings: () => fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min' }>('/api/settings'),
-  updateSettings: (updates: { recipeRangeCalcMode?: 'max' | 'median' | 'min' }, performedBy: string) =>
-    fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min' }>('/api/settings', {
+  getSettings: () => fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min'; defaultExpiryAlertLeadDays: number }>('/api/settings'),
+  updateSettings: (updates: { recipeRangeCalcMode?: 'max' | 'median' | 'min'; defaultExpiryAlertLeadDays?: number }, performedBy: string) =>
+    fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min'; defaultExpiryAlertLeadDays: number }>('/api/settings', {
       method: 'PATCH',
       body: JSON.stringify({ ...updates, performedBy })
     })

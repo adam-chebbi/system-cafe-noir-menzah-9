@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Supplier, SupplierInvoice, Ingredient } from '../../types';
+import { Supplier, SupplierInvoice, Ingredient, StockZone, ProductLabelMapping } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSystem } from '../../context/SystemContext';
+import { ZONE_LABELS, STOCK_ZONES } from '../../utils/stockZones';
+import { INGREDIENT_CATEGORIES, INGREDIENT_CATEGORY_LABELS } from '../../utils/ingredientCategories';
+import { IngredientPicker } from '../common/IngredientPicker';
 import {
   parseDocumentLocally,
   validateInvoiceFile,
@@ -49,7 +52,8 @@ import {
   Split,
   Combine,
   ShieldCheck,
-  Maximize2
+  Maximize2,
+  Link2
 } from 'lucide-react';
 
 interface InvoiceOcrModalProps {
@@ -58,6 +62,66 @@ interface InvoiceOcrModalProps {
   suppliers: Supplier[];
   ingredients?: Ingredient[];
   onSuccess: () => void;
+}
+
+/** Comment l'ingrédient d'une ligne a été déterminé — trace d'audit affichée à l'administrateur. */
+type MatchSource = 'mapping' | 'similarity' | 'manual' | 'none';
+
+/** Ligne de facture enrichie avec la provenance du rattachement ingrédient (au-delà de ExtractedInvoiceItem). */
+interface OcrLineItem extends ExtractedInvoiceItem {
+  matchSource: MatchSource;
+  matchScore?: number;
+  /** Id de la correspondance mémorisée appliquée, pour incrémenter son compteur d'usage à l'enregistrement. */
+  matchedMappingId?: string;
+  /** Si coché, une correspondance réutilisable sera mémorisée pour ce fournisseur à l'enregistrement final. */
+  rememberMapping: boolean;
+}
+
+const normalizeLabelClient = (label: string): string =>
+  (label || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Détermine l'ingrédient à rattacher à une ligne, dans l'ordre de confiance : correspondance
+ * mémorisée pour ce fournisseur (exacte, la plus fiable) > correspondance déjà proposée par
+ * l'extracteur > ressemblance de nom calculée à la volée (seuil 0.55).
+ */
+function resolveIngredientMatch(
+  rawLabel: string,
+  extractorMatchedId: string | undefined,
+  ingredientsList: Ingredient[],
+  activeMappings: ProductLabelMapping[]
+): { ingredient?: Ingredient; matchSource: MatchSource; matchScore?: number; mappingId?: string } {
+  const norm = normalizeLabelClient(rawLabel);
+  const mapping = activeMappings.find(m => m.normalizedLabel === norm);
+  if (mapping) {
+    const ing = ingredientsList.find(i => i.id === mapping.ingredientId);
+    if (ing) return { ingredient: ing, matchSource: 'mapping', matchScore: 1, mappingId: mapping.id };
+  }
+
+  if (extractorMatchedId) {
+    const ing = ingredientsList.find(i => i.id === extractorMatchedId);
+    if (ing) return { ingredient: ing, matchSource: 'similarity' };
+  }
+
+  if (rawLabel) {
+    let highest = 0;
+    let best: Ingredient | undefined;
+    for (const ing of ingredientsList) {
+      const sim = calculateStringSimilarity(ing.name, rawLabel);
+      if (sim > highest && sim >= 0.55) {
+        highest = sim;
+        best = ing;
+      }
+    }
+    if (best) return { ingredient: best, matchSource: 'similarity', matchScore: highest };
+  }
+
+  return { matchSource: 'none' };
 }
 
 export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
@@ -89,9 +153,16 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
   const [ingredientsList, setIngredientsList] = useState<Ingredient[]>(propIngredients || []);
   const [isNewIngredientModalOpen, setIsNewIngredientModalOpen] = useState(false);
   const [targetItemIndexForNewIngredient, setTargetItemIndexForNewIngredient] = useState<number | null>(null);
-  const [newIngredientForm, setNewIngredientForm] = useState({
+  const [newIngredientForm, setNewIngredientForm] = useState<{
+    name: string;
+    category: Ingredient['category'];
+    unit: string;
+    minStockThreshold: number;
+    costPerUnit: number;
+    supplierId: string;
+  }>({
     name: '',
-    category: 'coffee_beans',
+    category: 'coffee',
     unit: 'kg',
     minStockThreshold: 5,
     costPerUnit: 0,
@@ -118,6 +189,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
     totalConfidence: ConfidenceLevel;
     overallConfidence: ConfidenceLevel;
     updateStock: boolean;
+    stockZone: StockZone;
     forceManualTotals: boolean;
     manualSubtotal: number;
     manualTax: number;
@@ -140,14 +212,18 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
     totalConfidence: 'low',
     overallConfidence: 'low',
     updateStock: true,
+    stockZone: 'reserve_principale',
     forceManualTotals: false,
     manualSubtotal: 0,
     manualTax: 0,
     manualTotal: 0
   });
 
-  const [invoiceItems, setInvoiceItems] = useState<ExtractedInvoiceItem[]>([]);
+  const [invoiceItems, setInvoiceItems] = useState<OcrLineItem[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Correspondances produits mémorisées pour le fournisseur actuellement identifié
+  const [activeMappings, setActiveMappings] = useState<ProductLabelMapping[]>([]);
 
   // Viewer controls
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -169,6 +245,38 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
       setIngredientsList(propIngredients);
     }
   }, [propIngredients, isOpen]);
+
+  // Si l'administrateur corrige le fournisseur détecté (ou si l'extraction n'en a trouvé aucun),
+  // ré-applique les correspondances mémorisées de ce fournisseur — uniquement sur les lignes encore
+  // non rattachées, pour ne jamais écraser une correspondance ou un choix déjà fait.
+  useEffect(() => {
+    if (currentStep !== 2 || !invoiceHeader.supplierId) return;
+    let cancelled = false;
+    api.getProductMappings(invoiceHeader.supplierId).then(rows => {
+      if (cancelled) return;
+      setActiveMappings(rows);
+      setInvoiceItems(prev => prev.map(it => {
+        if (it.matchSource !== 'none') return it;
+        const match = resolveIngredientMatch(it.itemName, undefined, ingredientsList, rows);
+        if (!match.ingredient) return it;
+        const stockUnit = match.ingredient.unit;
+        const conv = convertUnitQuantity(it.quantity, it.unit, stockUnit, it.packageFactor || 1);
+        return {
+          ...it,
+          matchedIngredientId: match.ingredient.id,
+          matchedIngredientName: match.ingredient.name,
+          matchSource: match.matchSource,
+          matchScore: match.matchScore,
+          matchedMappingId: match.mappingId,
+          rememberMapping: match.matchSource !== 'mapping',
+          targetStockUnit: stockUnit,
+          targetStockQuantity: conv.convertedQuantity
+        };
+      }));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceHeader.supplierId, currentStep]);
 
   if (!isOpen) return null;
 
@@ -204,7 +312,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
       // Extract structured fields deterministically
       const extraction = DeterministicInvoiceExtractor.extract(
         parseResult.rawText,
-        suppliers.map(s => ({ id: s.id, name: s.name, taxNumber: s.taxId })),
+        suppliers.map(s => ({ id: s.id, name: s.name, taxNumber: s.taxNumber })),
         ingredientsList.map(i => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, costPerUnit: i.costPerUnit }))
       );
 
@@ -212,20 +320,20 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
       const initialSupplierId = extraction.supplierId.value || suppliers[0]?.id || '';
       const initialSupplierName = extraction.supplierName.value || suppliers[0]?.name || 'Fournisseur Inconnu';
 
+      // Charge les correspondances mémorisées de ce fournisseur AVANT de résoudre les lignes, pour
+      // qu'elles priment d'emblée sur la simple ressemblance de nom (jamais de flash visuel trompeur).
+      let mappingsForSupplier: ProductLabelMapping[] = [];
+      if (initialSupplierId) {
+        try {
+          mappingsForSupplier = await api.getProductMappings(initialSupplierId);
+        } catch { /* pas bloquant : le rattachement manuel reste possible */ }
+      }
+      setActiveMappings(mappingsForSupplier);
+
       // Enhance items with stock conversions
-      const enhancedItems: ExtractedInvoiceItem[] = (extraction.items || []).map((item, idx) => {
-        let matchedIng = ingredientsList.find(i => i.id === item.matchedIngredientId);
-        if (!matchedIng && item.itemName) {
-          // Attempt name similarity
-          let highest = 0;
-          for (const ing of ingredientsList) {
-            const sim = calculateStringSimilarity(ing.name, item.itemName);
-            if (sim > highest && sim >= 0.55) {
-              highest = sim;
-              matchedIng = ing;
-            }
-          }
-        }
+      const enhancedItems: OcrLineItem[] = (extraction.items || []).map((item, idx) => {
+        const match = resolveIngredientMatch(item.itemName, item.matchedIngredientId, ingredientsList, mappingsForSupplier);
+        const matchedIng = match.ingredient;
 
         const stockUnit = matchedIng ? matchedIng.unit : (item.unit || 'unit');
         const factor = item.packageFactor || 1;
@@ -236,6 +344,10 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
           id: item.id || `item_${idx}_${Date.now()}`,
           matchedIngredientId: matchedIng?.id,
           matchedIngredientName: matchedIng?.name,
+          matchSource: match.matchSource,
+          matchScore: match.matchScore,
+          matchedMappingId: match.mappingId,
+          rememberMapping: match.matchSource !== 'mapping' && !!matchedIng,
           targetStockUnit: stockUnit,
           targetStockQuantity: conv.convertedQuantity,
           packageFactor: factor
@@ -293,7 +405,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
   };
 
   // Recalculate line & total amounts dynamically
-  const updateItem = (index: number, updates: Partial<ExtractedInvoiceItem>) => {
+  const updateItem = (index: number, updates: Partial<OcrLineItem>) => {
     const updated = [...invoiceItems];
     const current = { ...updated[index], ...updates };
 
@@ -338,7 +450,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
 
   // Line actions: Add, Remove, Split, Merge
   const handleAddItem = () => {
-    const newItem: ExtractedInvoiceItem = {
+    const newItem: OcrLineItem = {
       id: `item_${Date.now()}_manual`,
       itemName: 'Nouvel article',
       quantity: 1,
@@ -349,7 +461,9 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
       confidence: 'high',
       packageFactor: 1,
       targetStockQuantity: 1,
-      targetStockUnit: 'unit'
+      targetStockUnit: 'unit',
+      matchSource: 'none',
+      rememberMapping: false
     };
     setInvoiceItems([...invoiceItems, newItem]);
   };
@@ -379,14 +493,14 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
     const halfQty = Math.max(1, Math.floor(target.quantity / 2)) || target.quantity / 2;
     const remQty = target.quantity - halfQty;
 
-    const item1: ExtractedInvoiceItem = {
+    const item1: OcrLineItem = {
       ...target,
       id: `split_${Date.now()}_1`,
       quantity: halfQty,
       totalLinePrice: Number((halfQty * target.unitPrice).toFixed(3))
     };
 
-    const item2: ExtractedInvoiceItem = {
+    const item2: OcrLineItem = {
       ...target,
       id: `split_${Date.now()}_2`,
       quantity: remQty,
@@ -408,7 +522,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
     const mergedTotal = current.totalLinePrice + next.totalLinePrice;
     const mergedUnitPrice = mergedQty > 0 ? Number((mergedTotal / mergedQty).toFixed(3)) : current.unitPrice;
 
-    const mergedItem: ExtractedInvoiceItem = {
+    const mergedItem: OcrLineItem = {
       ...current,
       itemName: `${current.itemName} + ${next.itemName}`,
       quantity: mergedQty,
@@ -431,7 +545,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
     try {
       const created = await api.createIngredient({
         name: newIngredientForm.name.trim(),
-        category: newIngredientForm.category as any,
+        category: newIngredientForm.category,
         unit: newIngredientForm.unit,
         currentStock: 0,
         minStockThreshold: Number(newIngredientForm.minStockThreshold) || 5,
@@ -445,7 +559,11 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
         updateItem(targetItemIndexForNewIngredient, {
           matchedIngredientId: created.id,
           matchedIngredientName: created.name,
-          targetStockUnit: created.unit
+          targetStockUnit: created.unit,
+          matchSource: 'manual',
+          matchScore: undefined,
+          matchedMappingId: undefined,
+          rememberMapping: true
         });
       }
 
@@ -492,6 +610,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
         ocrProcessed: true,
         ocrRawText: rawOcrText,
         stockUpdated: invoiceHeader.updateStock,
+        stockZone: invoiceHeader.updateStock ? invoiceHeader.stockZone : undefined,
         attachmentUrl: previewUrl || undefined,
         items: invoiceItems.map(item => ({
           itemName: item.itemName,
@@ -506,9 +625,33 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
           targetStockUnit: item.targetStockUnit || item.unit,
           unitCostInStockUnit: item.targetStockQuantity && item.targetStockQuantity > 0
             ? Number((item.totalLinePrice / item.targetStockQuantity).toFixed(3))
-            : item.unitPrice
+            : item.unitPrice,
+          matchSource: item.matchSource
         }))
       }, currentUser?.name || 'Comptable');
+
+      // Mémorise les nouvelles correspondances validées par l'administrateur (checkbox cochée), et
+      // trace l'usage de celles déjà mémorisées — jamais bloquant pour l'enregistrement de la facture.
+      const performedBy = currentUser?.name || 'Comptable';
+      await Promise.allSettled(
+        invoiceItems
+          .filter(item => !!item.matchedIngredientId)
+          .map(item => {
+            if (item.matchSource === 'mapping' && item.matchedMappingId) {
+              return api.recordProductMappingUsage(item.matchedMappingId);
+            }
+            if (item.rememberMapping) {
+              return api.upsertProductMapping({
+                supplierId: invoiceHeader.supplierId,
+                supplierName: invoiceHeader.supplierName,
+                rawLabel: item.itemName,
+                ingredientId: item.matchedIngredientId!,
+                ingredientName: item.matchedIngredientName || ''
+              }, performedBy);
+            }
+            return Promise.resolve();
+          })
+      );
 
       showRouteNotification(
         `Facture ${invoiceHeader.invoiceNumber} enregistrée avec succès ${invoiceHeader.updateStock ? '(Stock mis à jour)' : ''}`,
@@ -1022,41 +1165,67 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
                                   <label className="text-[10px] font-bold text-[#555D58]">
                                     Ingrédient de stock lié
                                   </label>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setTargetItemIndexForNewIngredient(idx);
-                                      setNewIngredientForm({
-                                        name: item.itemName,
-                                        category: 'coffee_beans',
-                                        unit: item.unit === 'carton' || item.unit === 'sac' ? 'kg' : (item.unit || 'kg'),
-                                        minStockThreshold: 5,
-                                        costPerUnit: item.unitPrice || 0,
-                                        supplierId: invoiceHeader.supplierId
-                                      });
-                                      setIsNewIngredientModalOpen(true);
-                                    }}
-                                    className="text-[10px] font-bold text-[#55A9C0] hover:underline flex items-center space-x-0.5"
-                                  >
-                                    <Plus className="w-2.5 h-2.5" />
-                                    <span>Créer nouvel ingrédient</span>
-                                  </button>
                                 </div>
 
-                                <select
-                                  value={item.matchedIngredientId || ''}
-                                  onChange={e => updateItem(idx, { matchedIngredientId: e.target.value || undefined })}
-                                  className={`w-full p-1.5 bg-white border rounded-lg font-semibold text-[#252A27] ${
-                                    item.matchedIngredientId ? 'border-emerald-300 bg-emerald-50/40' : 'border-amber-300 bg-amber-50/40'
-                                  }`}
-                                >
-                                  <option value="">-- Non rattaché (ne pas impacter le stock) --</option>
-                                  {ingredientsList.map(ing => (
-                                    <option key={ing.id} value={ing.id}>
-                                      {ing.name} (Unité stock: {ing.unit} | En stock: {ing.currentStock} {ing.unit})
-                                    </option>
-                                  ))}
-                                </select>
+                                <IngredientPicker
+                                  ingredients={ingredientsList}
+                                  value={item.matchedIngredientId}
+                                  contextLabel={item.itemName}
+                                  onChange={(id, ing) => {
+                                    updateItem(idx, {
+                                      matchedIngredientId: id,
+                                      matchedIngredientName: ing?.name,
+                                      matchSource: id ? 'manual' : 'none',
+                                      matchScore: undefined,
+                                      matchedMappingId: undefined,
+                                      rememberMapping: !!id
+                                    });
+                                  }}
+                                  onCreateNew={() => {
+                                    setTargetItemIndexForNewIngredient(idx);
+                                    setNewIngredientForm({
+                                      name: item.itemName,
+                                      category: 'coffee',
+                                      unit: item.unit === 'carton' || item.unit === 'sac' ? 'kg' : (item.unit || 'kg'),
+                                      minStockThreshold: 5,
+                                      costPerUnit: item.unitPrice || 0,
+                                      supplierId: invoiceHeader.supplierId
+                                    });
+                                    setIsNewIngredientModalOpen(true);
+                                  }}
+                                />
+
+                                {/* Provenance du rattachement + mémorisation pour les prochaines factures */}
+                                {item.matchedIngredientId && (
+                                  <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
+                                    {item.matchSource === 'mapping' ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                                        <Link2 className="w-2.5 h-2.5" />
+                                        <span>Correspondance mémorisée</span>
+                                      </span>
+                                    ) : item.matchSource === 'similarity' ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#ECEEEA] text-[#555D58] border border-[#D9DDD8]">
+                                        <span>Suggestion automatique{item.matchScore ? ` (${Math.round(item.matchScore * 100)}%)` : ''}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#ECEEEA] text-[#555D58] border border-[#D9DDD8]">
+                                        <span>Choix manuel</span>
+                                      </span>
+                                    )}
+
+                                    {item.matchSource !== 'mapping' && (
+                                      <label className="flex items-center gap-1.5 text-[10px] font-semibold text-[#555D58] cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={item.rememberMapping}
+                                          onChange={e => updateItem(idx, { rememberMapping: e.target.checked })}
+                                          className="w-3 h-3"
+                                        />
+                                        <span>Mémoriser pour {invoiceHeader.supplierName}</span>
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
 
@@ -1129,8 +1298,7 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
                                   <option value="0">0%</option>
                                   <option value="7">7%</option>
                                   <option value="13">13%</option>
-                                  <option value="19">19% (Standard)</option>
-                                  <option value="20">20%</option>
+                                  <option value="19">19%</option>
                                 </select>
                               </div>
 
@@ -1184,7 +1352,10 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
 
                     <div className="grid grid-cols-3 gap-3">
                       <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-[#252A27]">Sous-Total HT (DT)</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-[#252A27]">Sous-Total HT (DT)</label>
+                          {!invoiceHeader.forceManualTotals && renderConfidenceBadge(invoiceHeader.subtotalConfidence)}
+                        </div>
                         <input
                           type="number"
                           step="0.001"
@@ -1196,7 +1367,10 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-[#252A27]">Montant TVA (DT)</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-[#252A27]">Montant TVA (DT)</label>
+                          {!invoiceHeader.forceManualTotals && renderConfidenceBadge(invoiceHeader.taxConfidence)}
+                        </div>
                         <input
                           type="number"
                           step="0.001"
@@ -1208,7 +1382,10 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-[#252A27]">Total TTC (DT)</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-[#252A27]">Total TTC (DT)</label>
+                          {!invoiceHeader.forceManualTotals && renderConfidenceBadge(invoiceHeader.totalConfidence)}
+                        </div>
                         <input
                           type="number"
                           step="0.001"
@@ -1237,6 +1414,28 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
                         ({invoiceItems.filter(i => !!i.matchedIngredientId).length} article(s) lié(s))
                       </span>
                     </div>
+
+                    {invoiceHeader.updateStock && (
+                      <div className="pt-2 space-y-1">
+                        <label className="text-[11px] font-bold text-[#252A27]">Zone de réception du stock</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {STOCK_ZONES.map(z => (
+                            <button
+                              key={z}
+                              type="button"
+                              onClick={() => setInvoiceHeader({ ...invoiceHeader, stockZone: z })}
+                              className={`p-2 rounded-lg border text-xs font-bold transition-all ${
+                                invoiceHeader.stockZone === z
+                                  ? 'bg-[#252A27] text-[#A4DEC2] border-[#252A27]'
+                                  : 'bg-white text-[#252A27] border-[#D9DDD8]'
+                              }`}
+                            >
+                              {ZONE_LABELS[z]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1275,6 +1474,14 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
                 <p className="text-xs text-emerald-800">
                   Vérifiez le récapitulatif comptable ci-dessous. Aucune donnée n'a encore été écrite en base de données.
                 </p>
+                {invoiceItems.some(i => i.matchedIngredientId && i.rememberMapping && i.matchSource !== 'mapping') && (
+                  <p className="text-[11px] text-emerald-800 flex items-center gap-1 pt-1">
+                    <Link2 className="w-3 h-3 shrink-0" />
+                    <span>
+                      {invoiceItems.filter(i => i.matchedIngredientId && i.rememberMapping && i.matchSource !== 'mapping').length} nouvelle(s) correspondance(s) produit seront mémorisées pour {invoiceHeader.supplierName} — plus besoin de les re-rattacher sur les prochaines factures.
+                    </span>
+                  </p>
+                )}
               </div>
 
               {/* Invoice Summary Card */}
@@ -1337,11 +1544,17 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
 
                       return (
                         <div key={idx} className="p-2.5 flex items-center justify-between bg-white">
-                          <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <strong className="text-[#252A27]">{matchedIng.name}</strong>
-                            <span className="text-[11px] text-[#555D58] ml-2">
+                            <span className="text-[11px] text-[#555D58]">
                               (Livré : {item.quantity} {item.unit})
                             </span>
+                            {item.matchSource === 'mapping' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                                <Link2 className="w-2.5 h-2.5" />
+                                <span>Correspondance mémorisée</span>
+                              </span>
+                            )}
                           </div>
                           <div className="text-right">
                             <span className="font-bold text-emerald-700 font-mono">+{added} {matchedIng.unit}</span>
@@ -1421,16 +1634,12 @@ export const DeterministicInvoiceOcrModal: React.FC<InvoiceOcrModalProps> = ({
                   <label className="font-bold text-[#252A27]">Catégorie</label>
                   <select
                     value={newIngredientForm.category}
-                    onChange={e => setNewIngredientForm({ ...newIngredientForm, category: e.target.value })}
+                    onChange={e => setNewIngredientForm({ ...newIngredientForm, category: e.target.value as Ingredient['category'] })}
                     className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg font-semibold text-[#252A27]"
                   >
-                    <option value="coffee_beans">Café en grains</option>
-                    <option value="dairy">Produits laitiers</option>
-                    <option value="syrups">Sirops & Arômes</option>
-                    <option value="bakery">Pâtisserie / Boulangerie</option>
-                    <option value="beverages">Boissons / Jus</option>
-                    <option value="packaging">Emballages / Consommables</option>
-                    <option value="other">Autre</option>
+                    {INGREDIENT_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{INGREDIENT_CATEGORY_LABELS[cat]}</option>
+                    ))}
                   </select>
                 </div>
 

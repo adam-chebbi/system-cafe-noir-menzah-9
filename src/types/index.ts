@@ -98,16 +98,28 @@ export interface Category {
   parentId?: string;
 }
 
+/** Zones fixes de stockage V1 — aucune autre zone ne peut être créée. */
+export type StockZone = 'reserve_principale' | 'depot';
+
 export interface Ingredient {
   id: string;
   name: string;
   unit: 'g' | 'kg' | 'ml' | 'cl' | 'L' | 'unit' | 'portion';
+  /** Stock détaillé par zone — source de vérité. */
+  stockByZone: Record<StockZone, number>;
+  /** Total (somme des zones), recalculé à chaque mutation. */
   currentStock: number;
   minStockThreshold: number;
-  costPerUnit: number;
+  /** Stock cible (objectif de réapprovisionnement), informatif. */
+  targetStock?: number;
+  costPerUnit: number; // Coût Moyen Pondéré (CMP)
   supplierId?: string;
   category: 'coffee' | 'milk_dairy' | 'syrup' | 'bakery' | 'fresh' | 'packaging' | 'beverage';
   imageUrl?: string;
+  /** Gestion des lots/péremptions activable par produit. */
+  trackLots?: boolean;
+  /** Délai d'alerte péremption (jours) propre à ce produit ; sinon le défaut global s'applique. */
+  expiryAlertLeadDays?: number;
   updatedAt: string;
 }
 
@@ -333,15 +345,28 @@ export interface StockMovement {
   id: string;
   ingredientId: string;
   ingredientName: string;
-  type: 'in_reception' | 'out_sale' | 'out_waste' | 'adjustment_inventory' | 'adjustment_manual';
+  type: 'in_reception' | 'out_sale' | 'out_waste' | 'adjustment_inventory' | 'adjustment_manual' | 'transfer';
+  /** Zone concernée par CETTE ligne de mouvement (un transfert génère 2 lignes, une par zone). */
+  zone: StockZone;
   quantity: number;
   unit: string;
   previousStock: number;
   newStock: number;
   unitCost: number;
   totalValue: number;
+  /** D'où vient la quantité (fournisseur, zone source d'un transfert, etc.) */
+  origin?: string;
+  /** Où va la quantité (zone destination d'un transfert, etc.) */
+  destination?: string;
   referenceDoc?: string;
   reason?: string;
+  comment?: string;
+  /** Pour un transfert : id du mouvement jumeau (l'autre zone). */
+  linkedMovementId?: string;
+  lotId?: string;
+  /** Fournisseur à l'origine d'une réception — permet l'historique des prix d'achat par fournisseur. */
+  supplierId?: string;
+  supplierName?: string;
   performedBy: string;
   createdAt: string;
 }
@@ -352,10 +377,11 @@ export interface StockWaste {
   ingredientName: string;
   productId?: string;
   productName?: string;
+  zone: StockZone;
   quantity: number;
   unit: string;
   estimatedCost: number;
-  reason: 'expired' | 'damaged' | 'spilled' | 'preparation_error' | 'customer_return' | 'other';
+  reason: 'perte' | 'casse' | 'peremption' | 'consommation_interne' | 'produit_offert' | 'erreur_preparation' | 'ajustement_inventaire' | 'autre';
   notes?: string;
   recordedBy: string;
   createdAt: string;
@@ -364,12 +390,15 @@ export interface StockWaste {
 export interface InventoryItem {
   ingredientId: string;
   ingredientName: string;
+  zone: StockZone;
   unit: string;
   expectedStock: number;
   countedStock: number;
   difference: number;
   unitCost: number;
   differenceValue: number;
+  /** Choix manuel de l'administrateur pour CETTE ligne : ajuster le stock réel (true) ou garder le théorique (false). */
+  applyAdjustment: boolean;
   notes?: string;
 }
 
@@ -379,12 +408,31 @@ export interface InventoryAudit {
   date: string;
   performedBy: string;
   status: 'draft' | 'validated';
+  scopeType: 'full' | 'category' | 'zone';
+  scopeCategory?: Ingredient['category'];
+  scopeZone?: StockZone;
   items: InventoryItem[];
   totalExpectedValue: number;
   totalCountedValue: number;
   totalDifferenceValue: number;
   createdAt: string;
   validatedAt?: string;
+}
+
+export interface StockLot {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  zone: StockZone;
+  lotNumber: string;
+  expirationDate?: string; // YYYY-MM-DD
+  quantity: number;
+  unit: string;
+  status: 'active' | 'archived';
+  notes?: string;
+  receivedBy: string;
+  createdAt: string;
+  sourceMovementId?: string;
 }
 
 export interface IngredientConsumptionSummary {
@@ -409,6 +457,8 @@ export interface TheoreticalConsumptionReport {
 export interface IngredientTheoreticalStock {
   ingredientId: string;
   ingredientName: string;
+  /** Zone comparée — toujours la Réserve principale, seule zone de consommation. */
+  zone: StockZone;
   unit: string;
   unitCost: number;
   referenceDate: string;
@@ -425,6 +475,7 @@ export interface Supplier {
   id: string;
   name: string;
   contactPerson: string;
+  whatsapp?: string;
   email: string;
   phone: string;
   address: string;
@@ -443,6 +494,27 @@ export interface PurchaseOrderItem {
   quantity: number;
   expectedUnitCost: number;
   totalCost: number;
+  /** Quantité déjà reçue, cumulée sur toutes les réceptions de ce bon. */
+  receivedQuantity?: number;
+}
+
+export interface PurchaseOrderReceptionItem {
+  ingredientId?: string;
+  itemName: string;
+  unit: string;
+  quantityReceived: number;
+  unitCost: number;
+}
+
+/** Une commande peut être livrée en plusieurs fois : chaque réception est conservée pour l'historique. */
+export interface PurchaseOrderReception {
+  id: string;
+  date: string;
+  zone: StockZone;
+  items: PurchaseOrderReceptionItem[];
+  note?: string;
+  performedBy: string;
+  createdAt: string;
 }
 
 export interface PurchaseOrder {
@@ -452,6 +524,7 @@ export interface PurchaseOrder {
   supplierName: string;
   status: 'draft' | 'sent' | 'partially_received' | 'received' | 'cancelled';
   items: PurchaseOrderItem[];
+  receptions: PurchaseOrderReception[];
   totalAmount: number;
   expectedDeliveryDate?: string;
   notes?: string;
@@ -475,6 +548,36 @@ export interface SupplierInvoiceItem {
   convertedStockQuantity?: number;
   targetStockUnit?: string;
   unitCostInStockUnit?: number;
+  /** Comment l'ingrédient a été associé à cette ligne — trace d'audit, jamais utilisé pour du calcul. */
+  matchSource?: 'mapping' | 'similarity' | 'manual' | 'none';
+}
+
+/**
+ * Correspondance réutilisable entre le libellé exact d'un article tel qu'imprimé sur les factures
+ * d'un fournisseur donné et l'un de nos ingrédients de stock. Permet de ne plus jamais avoir à
+ * rattacher manuellement le même article à chaque nouvelle facture de ce fournisseur.
+ */
+export interface ProductLabelMapping {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  rawLabel: string;
+  normalizedLabel: string;
+  ingredientId: string;
+  ingredientName: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  timesApplied: number;
+}
+
+export interface SupplierInvoicePayment {
+  id: string;
+  amount: number;
+  method: string;
+  date: string;
+  performedBy: string;
+  notes?: string;
 }
 
 export interface SupplierInvoice {
@@ -482,6 +585,8 @@ export interface SupplierInvoice {
   invoiceNumber: string;
   supplierId: string;
   supplierName: string;
+  /** Facture liée à un bon de commande, ou créée indépendamment si absent. */
+  purchaseOrderId?: string;
   invoiceDate: string;
   dueDate: string;
   items: SupplierInvoiceItem[];
@@ -489,9 +594,14 @@ export interface SupplierInvoice {
   taxAmount: number;
   totalTTC?: number;
   totalAmount: number;
+  /** Montant réglé cumulé (toutes les entrées de `payments`). */
+  paidAmount: number;
+  payments: SupplierInvoicePayment[];
   paymentStatus: 'unpaid' | 'paid' | 'partially_paid';
   paymentDate?: string;
   paymentMethod?: string;
+  /** Zone de stock alimentée si `stockUpdated` — conservée pour pouvoir annuler proprement. */
+  stockZone?: StockZone;
   attachmentUrl?: string;
   ocrProcessed: boolean;
   ocrRawText?: string;
@@ -503,6 +613,22 @@ export interface SupplierInvoice {
   isRetroactive?: boolean;
   documentDate?: string;
   retroNotes?: string;
+}
+
+/** Facture enrichie côté serveur avec l'état d'échéance calculé (jamais persisté tel quel). */
+export interface SupplierInvoiceWithDueStatus extends SupplierInvoice {
+  daysUntilDue: number;
+  isOverdue: boolean;
+  isDueSoon: boolean;
+}
+
+export interface IngredientPurchaseHistoryEntry {
+  date: string;
+  supplierId?: string;
+  supplierName?: string;
+  quantity: number;
+  unitCost: number;
+  referenceDoc?: string;
 }
 
 export interface Expense {
@@ -596,7 +722,7 @@ export interface PayrollRecord {
 
 export interface SystemAlert {
   id: string;
-  type: 'new_qr_order' | 'low_stock' | 'table_bill_requested' | 'table_help' | 'inventory_discrepancy' | 'invoice_due' | 'system_event';
+  type: 'new_qr_order' | 'low_stock' | 'table_bill_requested' | 'table_help' | 'inventory_discrepancy' | 'invoice_due' | 'system_event' | 'negative_stock' | 'lot_expiring' | 'lot_expired';
   title: string;
   message: string;
   severity: 'info' | 'warning' | 'critical' | 'success';
