@@ -1,5 +1,6 @@
 import { db } from '../db/database.js';
 import { Ingredient, StockMovement, StockWaste, InventoryAudit } from '../types/index.js';
+import { CatalogService } from './catalogService.js';
 
 export class StockService {
   public static getAllIngredients(): Ingredient[] {
@@ -39,6 +40,11 @@ export class StockService {
     db.set('ingredients', ingredients);
 
     db.logAudit('Mise à jour Ingrédient', 'stock', `Modification de ${updated.name}`, performedBy);
+
+    if (updated.costPerUnit !== existing.costPerUnit) {
+      CatalogService.recalculateRecipesForIngredient(id, performedBy);
+    }
+
     return updated;
   }
 
@@ -52,7 +58,9 @@ export class StockService {
   }
 
   /**
-   * Deduct stock based on technical recipe for a product and its options
+   * Deduct stock based on technical recipe for a product and its options.
+   * Développe récursivement les sous-recettes jusqu'aux ingrédients bruts (CatalogService partage
+   * cette même logique d'expansion avec le calcul de consommation théorique, pour garantir la cohérence).
    */
   public static deductStockForProduct(productId: string, quantity: number, referenceDoc: string, performedBy: string) {
     const recipes = db.get('recipes');
@@ -64,14 +72,13 @@ export class StockService {
       return; // No technical recipe configured for this product
     }
 
-    const portionFactor = quantity / (recipe.portionYield || 1);
+    const rawConsumption = CatalogService.expandRecipeToRawIngredients(productId, quantity);
 
-    for (const item of recipe.ingredients) {
-      const ingIndex = ingredients.findIndex(i => i.id === item.ingredientId);
+    for (const [ingredientId, deductQty] of rawConsumption) {
+      const ingIndex = ingredients.findIndex(i => i.id === ingredientId);
       if (ingIndex === -1) continue;
 
       const ing = ingredients[ingIndex];
-      const deductQty = item.quantity * portionFactor;
       const prevStock = ing.currentStock;
       const newStock = Math.max(0, Number((prevStock - deductQty).toFixed(4)));
 
@@ -126,6 +133,7 @@ export class StockService {
 
     const ing = ingredients[ingIndex];
     const prevStock = ing.currentStock;
+    const prevCost = ing.costPerUnit;
     const newStock = Number((prevStock + quantity).toFixed(4));
 
     ingredients[ingIndex].currentStock = newStock;
@@ -156,6 +164,10 @@ export class StockService {
     db.set('ingredients', ingredients);
     db.set('stockMovements', movements);
     db.logAudit('Entrée de Stock', 'stock', `Ajout de ${quantity} ${ing.unit} pour ${ing.name} (Réf: ${referenceDoc})`, performedBy);
+
+    if (unitCost > 0 && unitCost !== prevCost) {
+      CatalogService.recalculateRecipesForIngredient(ingredientId, performedBy);
+    }
 
     return movement;
   }

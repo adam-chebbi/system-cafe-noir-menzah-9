@@ -50,10 +50,10 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({ isOpen, onClose,
   };
 
 
-  const sampleCsv = `ID;Nom;Categorie;Prix;TVA;Disponible;Station;Description;Image
-prod_101;Cold Brew Signature;Boissons Fraîches;5.50;10;OUI;bar;Infusion à froid 18h grains Colombie;https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&auto=format&fit=crop&q=80
-prod_102;Matcha Latte Bio;Thés & Infusions;5.20;10;OUI;bar;Matcha de cérémonie Uji et lait végétal;https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=400&auto=format&fit=crop&q=80
-prod_103;Cinnamon Roll Artisanal;Pâtisseries & Brunch;4.80;10;OUI;kitchen;Roulé à la cannelle de Ceylan glacé;`;
+  const sampleCsv = `ID;Nom;Categorie;SousCategorie;Prix;TVA;Disponible;Station;Description;Image
+prod_101;Cold Brew Signature;Boissons Fraîches;Cafés Froids;5.50;10;OUI;bar;Infusion à froid 18h grains Colombie;https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&auto=format&fit=crop&q=80
+prod_102;Matcha Latte Bio;Thés & Infusions;;5.20;10;OUI;bar;Matcha de cérémonie Uji et lait végétal;https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=400&auto=format&fit=crop&q=80
+prod_103;Cinnamon Roll Artisanal;Pâtisseries & Brunch;Viennoiseries;4.80;10;OUI;kitchen;Roulé à la cannelle de Ceylan glacé;`;
 
   const handleDownloadSample = () => {
     const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
@@ -92,7 +92,7 @@ prod_103;Cinnamon Roll Artisanal;Pâtisseries & Brunch;4.80;10;OUI;kitchen;Roul�
           <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-[#D9DDD8]">
             <div className="text-xs text-[#555D58]">
               <span className="font-bold text-[#252A27] block text-[11px]">Format attendu :</span>
-              Séparateur point-virgule (;) · Colonnes : ID, Nom, Catégorie, Prix, TVA, Disponible, Station, Description, <span className="font-semibold text-[#252A27]">Image (URL)</span>
+              Séparateur point-virgule (;) · Colonnes : ID, Nom, Catégorie, SousCatégorie (optionnel), Prix, TVA, Disponible, Station, Description, <span className="font-semibold text-[#252A27]">Image (URL)</span>
             </div>
             <button
               onClick={handleDownloadSample}

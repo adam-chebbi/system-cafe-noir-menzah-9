@@ -646,7 +646,7 @@ export class OrderService {
       changeGiven: paymentData.changeGiven,
       cashierId: paymentData.cashierId,
       cashierName: paymentData.cashierName,
-      itemsSummary: order.items.map(i => ({ name: i.productName, quantity: i.quantity, unitPrice: i.unitPrice, total: i.totalPrice })),
+      itemsSummary: order.items.map(i => ({ productId: i.productId, productName: i.productName, quantity: i.quantity, unitPrice: i.unitPrice, total: i.totalPrice })),
       createdAt: new Date().toISOString()
     };
     sales.unshift(sale);

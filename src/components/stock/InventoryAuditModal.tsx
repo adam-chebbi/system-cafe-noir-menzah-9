@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Ingredient, InventoryAudit } from '../../types';
+import { Ingredient, InventoryAudit, IngredientTheoreticalStock } from '../../types';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSystem } from '../../context/SystemContext';
-import { ClipboardCheck, CheckCircle2, AlertTriangle, X, Save } from 'lucide-react';
+import { ClipboardCheck, CheckCircle2, AlertTriangle, X, Save, Info } from 'lucide-react';
 
 interface InventoryAuditModalProps {
   isOpen: boolean;
@@ -25,22 +25,47 @@ export const InventoryAuditModal: React.FC<InventoryAuditModalProps> = ({
   const [counts, setCounts] = useState<{ [id: string]: number }>({});
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  // Stock théorique (ventes réelles × fiches techniques, reconstruit depuis le dernier inventaire validé)
+  // — utilisé comme référence "attendue" au lieu du solde ledger courant, pour un vrai contrôle indépendant.
+  const [theoreticalMap, setTheoreticalMap] = useState<Record<string, IngredientTheoreticalStock>>({});
 
   useEffect(() => {
-    if (isOpen) {
-      const initial: { [id: string]: number } = {};
-      if (editingAudit && editingAudit.items) {
-        editingAudit.items.forEach(item => {
-          initial[item.ingredientId] = item.countedStock;
-        });
-      } else {
-        ingredients.forEach(i => {
-          initial[i.id] = i.currentStock;
-        });
-      }
+    if (!isOpen) return;
+
+    const initial: { [id: string]: number } = {};
+    if (editingAudit && editingAudit.items) {
+      editingAudit.items.forEach(item => {
+        initial[item.ingredientId] = item.countedStock;
+      });
       setCounts(initial);
       setNotes('');
+      return;
     }
+
+    // Nouvel audit : charger le stock théorique indépendant pour servir de référence.
+    let cancelled = false;
+    api.getTheoreticalStock()
+      .then(rows => {
+        if (cancelled) return;
+        const map: Record<string, IngredientTheoreticalStock> = {};
+        rows.forEach(r => { map[r.ingredientId] = r; });
+        setTheoreticalMap(map);
+        const initialCounts: { [id: string]: number } = {};
+        ingredients.forEach(i => {
+          initialCounts[i.id] = map[i.id]?.theoreticalStock ?? i.currentStock;
+        });
+        setCounts(initialCounts);
+      })
+      .catch(() => {
+        // Repli silencieux sur le stock ledger si le calcul théorique échoue — l'audit reste utilisable.
+        if (cancelled) return;
+        const initialCounts: { [id: string]: number } = {};
+        ingredients.forEach(i => { initialCounts[i.id] = i.currentStock; });
+        setCounts(initialCounts);
+      });
+    setNotes('');
+
+    return () => { cancelled = true; };
   }, [isOpen, editingAudit, ingredients]);
 
   if (!isOpen) return null;
@@ -49,32 +74,37 @@ export const InventoryAuditModal: React.FC<InventoryAuditModalProps> = ({
     setCounts(prev => ({ ...prev, [id]: Math.max(0, val) }));
   };
 
-  // Calculate variance summary
+  // Calculate variance summary — référence = stock théorique (si disponible et audit non déjà enregistré), sinon stock ledger courant.
   const auditItems = ingredients.map(ing => {
-    const actual = counts[ing.id] !== undefined ? counts[ing.id] : ing.currentStock;
-    const diff = Number((actual - ing.currentStock).toFixed(3));
+    const theoretical = !editingAudit ? theoreticalMap[ing.id] : undefined;
+    const expected = theoretical ? theoretical.theoreticalStock : ing.currentStock;
+    const actual = counts[ing.id] !== undefined ? counts[ing.id] : expected;
+    const diff = Number((actual - expected).toFixed(3));
     const varianceVal = Number((diff * ing.costPerUnit).toFixed(2));
     return {
       ingredientId: ing.id,
       ingredientName: ing.name,
-      expectedStock: ing.currentStock,
+      expectedStock: expected,
       countedStock: actual,
       unit: ing.unit,
       unitCost: ing.costPerUnit,
       difference: diff,
-      differenceValue: varianceVal
+      differenceValue: varianceVal,
+      theoretical
     };
   });
 
   const totalVarianceValue = auditItems.reduce((sum, i) => sum + i.differenceValue, 0);
+  // Payload envoyé à l'API : sans le détail "theoretical" (usage d'affichage local uniquement).
+  const itemsForApi = auditItems.map(({ theoretical, ...item }) => item);
 
   const handleSaveDraft = async () => {
     try {
       setLoading(true);
       if (editingAudit) {
-        await api.updateInventoryAudit(editingAudit.id, { items: auditItems, status: 'draft' }, currentUser?.name || 'Manager');
+        await api.updateInventoryAudit(editingAudit.id, { items: itemsForApi, status: 'draft' }, currentUser?.name || 'Manager');
       } else {
-        await api.createDraftInventoryAudit(auditItems, currentUser?.name || 'Manager');
+        await api.createDraftInventoryAudit(itemsForApi, currentUser?.name || 'Manager');
       }
       showRouteNotification('Brouillon d\'inventaire sauvegardé', 'success');
       onSuccess();
@@ -90,9 +120,9 @@ export const InventoryAuditModal: React.FC<InventoryAuditModalProps> = ({
     try {
       setLoading(true);
       if (editingAudit) {
-        await api.updateInventoryAudit(editingAudit.id, { items: auditItems, status: 'validated' }, currentUser?.name || 'Manager');
+        await api.updateInventoryAudit(editingAudit.id, { items: itemsForApi, status: 'validated' }, currentUser?.name || 'Manager');
       } else {
-        await api.createInventoryAudit(auditItems, currentUser?.name || 'Manager');
+        await api.createInventoryAudit(itemsForApi, currentUser?.name || 'Manager');
       }
       showRouteNotification('Inventaire validé et stock mis à jour', 'success');
       onSuccess();
@@ -149,6 +179,25 @@ export const InventoryAuditModal: React.FC<InventoryAuditModalProps> = ({
                 <p className="text-[10px] text-[#555D58]">
                   Stock théorique : {item.expectedStock} {item.unit} &bull; {item.unitCost.toFixed(3)} DT/{item.unit}
                 </p>
+                {item.theoretical && (
+                  item.theoretical.referenceSource === 'audit' ? (
+                    <p className="text-[9px] text-[#7B8A7F] flex items-center gap-1 mt-0.5">
+                      <Info className="w-2.5 h-2.5 shrink-0" />
+                      <span>
+                        Reconstruit depuis l'inventaire du {new Date(item.theoretical.referenceDate).toLocaleDateString('fr-FR')}
+                        {' '}+ ventes réelles (fiches techniques)
+                        {Math.abs(item.theoretical.ledgerDrift) > 0.01 && (
+                          <> &bull; écart avec le stock ledger : {item.theoretical.ledgerDrift > 0 ? '+' : ''}{item.theoretical.ledgerDrift} {item.unit}</>
+                        )}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-[9px] text-amber-700 flex items-center gap-1 mt-0.5">
+                      <Info className="w-2.5 h-2.5 shrink-0" />
+                      <span>Aucun inventaire validé antérieur — stock ledger courant utilisé comme référence</span>
+                    </p>
+                  )
+                )}
               </div>
 
               {/* Real count input */}

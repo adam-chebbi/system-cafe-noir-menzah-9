@@ -45,6 +45,7 @@ export const ProductsView: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [recipes, setRecipes] = useState<TechnicalRecipe[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
@@ -54,6 +55,7 @@ export const ProductsView: React.FC = () => {
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryParentId, setNewCategoryParentId] = useState<string>('');
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
   const hasValidatedIdRef = useRef(false);
@@ -135,12 +137,19 @@ export const ProductsView: React.FC = () => {
   const safeCategories = Array.isArray(categories) ? categories : [];
   const safeRecipes = Array.isArray(recipes) ? recipes : [];
 
+  // Catalogue à 2 niveaux : Catégorie (parentId absent) → Sous-catégorie (parentId présent)
+  const topLevelCategories = safeCategories.filter(c => !c.parentId);
+  const subCategoriesOfSelected = selectedCategory === 'all'
+    ? []
+    : safeCategories.filter(c => c.parentId === selectedCategory);
+
   const filteredProducts = safeProducts.filter(p => {
     const matchesCat = selectedCategory === 'all' || p.categoryId === selectedCategory;
+    const matchesSubCat = selectedSubCategory === 'all' || p.subCategoryId === selectedSubCategory;
     const matchesSearch =
       (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesCat && matchesSearch;
+    return matchesCat && matchesSubCat && matchesSearch;
   });
 
   const selectedProduct = safeProducts.find(p => p.id === selectedProductId) || filteredProducts[0] || null;
@@ -161,6 +170,7 @@ export const ProductsView: React.FC = () => {
           {
             name: editingProduct.name,
             categoryId: editingProduct.categoryId,
+            subCategoryId: editingProduct.subCategoryId,
             price: Number(editingProduct.price) || 0,
             tvaRate: Number(editingProduct.tvaRate) || 10,
             imageUrl: editingProduct.imageUrl,
@@ -219,14 +229,15 @@ export const ProductsView: React.FC = () => {
           name: newCategoryName,
           slug: newCategoryName.toLowerCase().replace(/\s+/g, '-'),
           order: categories.length + 1,
-          active: true
+          active: true,
+          parentId: newCategoryParentId || undefined
         },
         currentUser?.name || 'Admin'
       );
       setCategories(prev => [...prev, created]);
       setNewCategoryName('');
-      setIsCategoryModalOpen(false);
-      showRouteNotification(`Catégorie "${newCategoryName}" créée`, 'success');
+      setNewCategoryParentId('');
+      showRouteNotification(`${newCategoryParentId ? 'Sous-catégorie' : 'Catégorie'} "${newCategoryName}" créée`, 'success');
     } catch (err: any) {
       showRouteNotification(`Erreur: ${err.message}`, 'error');
     }
@@ -327,7 +338,7 @@ export const ProductsView: React.FC = () => {
 
         <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar">
           <button
-            onClick={() => setSelectedCategory('all')}
+            onClick={() => { setSelectedCategory('all'); setSelectedSubCategory('all'); }}
             className={`px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition-colors border ${
               selectedCategory === 'all'
                 ? 'bg-[#252A27] text-white border-[#252A27]'
@@ -336,10 +347,10 @@ export const ProductsView: React.FC = () => {
           >
             Tous ({products.length})
           </button>
-          {categories.map(cat => (
+          {topLevelCategories.map(cat => (
             <button
               key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
+              onClick={() => { setSelectedCategory(cat.id); setSelectedSubCategory('all'); }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition-colors border ${
                 selectedCategory === cat.id
                   ? 'bg-[#252A27] text-white border-[#252A27]'
@@ -352,6 +363,36 @@ export const ProductsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Sub-category chips row (only when a top-level category with children is selected) */}
+      {subCategoriesOfSelected.length > 0 && (
+        <div className="bg-[#F7F7F5] px-4 py-1.5 border-b border-[#D9DDD8] flex items-center gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
+          <span className="text-[10px] font-bold text-[#555D58] shrink-0">Sous-catégorie :</span>
+          <button
+            onClick={() => setSelectedSubCategory('all')}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap transition-colors border ${
+              selectedSubCategory === 'all'
+                ? 'bg-[#252A27] text-white border-[#252A27]'
+                : 'bg-white text-[#555D58] border-[#D9DDD8] hover:bg-[#ECEEEA]'
+            }`}
+          >
+            Toutes
+          </button>
+          {subCategoriesOfSelected.map(sub => (
+            <button
+              key={sub.id}
+              onClick={() => setSelectedSubCategory(sub.id)}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap transition-colors border ${
+                selectedSubCategory === sub.id
+                  ? 'bg-[#252A27] text-white border-[#252A27]'
+                  : 'bg-white text-[#555D58] border-[#D9DDD8] hover:bg-[#ECEEEA]'
+              }`}
+            >
+              {sub.name} ({safeProducts.filter(p => p.subCategoryId === sub.id).length})
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Master-Detail Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Pane / Master Product List */}
@@ -363,6 +404,7 @@ export const ProductsView: React.FC = () => {
           ) : (
             filteredProducts.map(product => {
               const cat = categories.find(c => c.id === product.categoryId);
+              const subCat = product.subCategoryId ? categories.find(c => c.id === product.subCategoryId) : undefined;
               const hasRecipe = recipes.some(r => r.productId === product.id);
               const isSelected = selectedProduct?.id === product.id;
 
@@ -396,7 +438,7 @@ export const ProductsView: React.FC = () => {
                         )}
                       </div>
                       <div className="flex items-center space-x-2 text-[10px] text-[#555D58] mt-0.5">
-                        <span>{cat?.name || 'Catégorie'}</span>
+                        <span>{cat?.name || 'Catégorie'}{subCat ? ` › ${subCat.name}` : ''}</span>
                         <span>&bull;</span>
                         <span>{product.station === 'kitchen' ? 'Cuisine' : 'Bar'}</span>
                         <span>&bull;</span>
@@ -438,6 +480,7 @@ export const ProductsView: React.FC = () => {
                       <div className="flex items-center space-x-2">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-[#555D58]">
                           {categories.find(c => c.id === selectedProduct.categoryId)?.name}
+                          {selectedProduct.subCategoryId ? ` › ${categories.find(c => c.id === selectedProduct.subCategoryId)?.name || ''}` : ''}
                         </span>
                         <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-[#ECEEEA] text-[#252A27] border border-[#D9DDD8]">
                           Poste {selectedProduct.station === 'kitchen' ? 'Cuisine' : 'Bar'}
@@ -530,38 +573,68 @@ export const ProductsView: React.FC = () => {
 
                 {selectedProductRecipe ? (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="p-2.5 rounded-lg bg-[#F7F7F5] border border-[#D9DDD8]">
-                        <span className="text-[9px] font-bold text-[#555D58] uppercase block">Coût Matière</span>
-                        <span className="font-mono font-bold text-xs text-[#252A27]">
-                          {(selectedProductRecipe.totalIngredientsCost || 0).toFixed(3)} DT
-                        </span>
-                      </div>
+                    {(() => {
+                      const cost = selectedProductRecipe.totalIngredientsCost || 0;
+                      const price = selectedProduct.price || 0;
+                      const actualMargin = selectedProductRecipe.actualMarginPercentage ??
+                        (price > 0 ? Number((((price - cost) / price) * 100).toFixed(1)) : 0);
+                      const targetMargin = selectedProductRecipe.targetMarginPercentage ?? 70;
+                      const comparison: 'below' | 'reached' | 'exceeded' =
+                        actualMargin < targetMargin ? 'below' : actualMargin > targetMargin ? 'exceeded' : 'reached';
+                      return (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="p-2.5 rounded-lg bg-[#F7F7F5] border border-[#D9DDD8]">
+                            <span className="text-[9px] font-bold text-[#555D58] uppercase block">Coût Matière</span>
+                            <span className="font-mono font-bold text-xs text-[#252A27]">
+                              {cost.toFixed(3)} DT
+                            </span>
+                          </div>
 
-                      <div className="p-2.5 rounded-lg bg-[#F7F7F5] border border-[#D9DDD8]">
-                        <span className="text-[9px] font-bold text-[#555D58] uppercase block">Marge Brute</span>
-                        <span className="font-mono font-bold text-xs text-emerald-800">
-                          {(selectedProduct.price - (selectedProductRecipe.totalIngredientsCost || 0)).toFixed(3)} DT
-                        </span>
-                      </div>
+                          <div className="p-2.5 rounded-lg bg-[#F7F7F5] border border-[#D9DDD8]">
+                            <span className="text-[9px] font-bold text-[#555D58] uppercase block">Marge Brute</span>
+                            <span className="font-mono font-bold text-xs text-emerald-800">
+                              {(price - cost).toFixed(3)} DT
+                            </span>
+                          </div>
 
-                      <div className="p-2.5 rounded-lg bg-[#F7F7F5] border border-[#D9DDD8]">
-                        <span className="text-[9px] font-bold text-[#555D58] uppercase block">Taux Marge</span>
-                        <span className="font-mono font-bold text-xs text-emerald-800">
-                          {selectedProductRecipe.targetMarginPercentage || 75}%
-                        </span>
-                      </div>
-                    </div>
+                          <div className="p-2.5 rounded-lg bg-[#F7F7F5] border border-[#D9DDD8]">
+                            <span className="text-[9px] font-bold text-[#555D58] uppercase block">Marge Réelle</span>
+                            <span className="font-mono font-bold text-xs text-[#252A27]">
+                              {actualMargin}%
+                            </span>
+                          </div>
 
-                    {/* Ingredients list summary */}
+                          <div className="p-2.5 rounded-lg bg-[#F7F7F5] border border-[#D9DDD8] space-y-0.5">
+                            <span className="text-[9px] font-bold text-[#555D58] uppercase block">Marge Cible</span>
+                            <span className="font-mono font-bold text-xs text-[#252A27]">{targetMargin}%</span>
+                            <span
+                              className={`block w-fit text-[8px] font-bold px-1.5 py-0.5 rounded ${
+                                comparison === 'below'
+                                  ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                                  : comparison === 'reached'
+                                  ? 'bg-[#E8F5EE] text-[#2B6245] border border-[#C5E8D5]'
+                                  : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                              }`}
+                            >
+                              {comparison === 'below' ? 'En dessous' : comparison === 'reached' ? 'Atteinte' : 'Dépassée'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Ingredients & sub-recipes list summary */}
                     <div className="border border-[#D9DDD8] rounded-lg overflow-hidden divide-y divide-[#ECEEEA]">
                       <div className="px-2.5 py-1.5 bg-[#F7F7F5] text-[10px] font-bold text-[#555D58] flex justify-between">
-                        <span>Ingrédient</span>
+                        <span>Ingrédient / Sous-recette</span>
                         <span>Dosage & Coût</span>
                       </div>
                       {selectedProductRecipe.ingredients?.map((ing, idx) => (
                         <div key={idx} className="px-2.5 py-1.5 text-xs flex items-center justify-between">
-                          <span className="font-semibold text-[#252A27]">{ing.ingredientName}</span>
+                          <span className="font-semibold text-[#252A27] flex items-center space-x-1">
+                            {ing.type === 'subrecipe' && <Layers className="w-3 h-3 text-[#555D58]" />}
+                            <span>{ing.ingredientName}</span>
+                          </span>
                           <span className="font-mono text-[11px] text-[#555D58]">
                             {ing.displayQuantity || formatApproxQuantity(ing.quantityMin ?? ing.quantity, ing.quantityMax, ing.recipeUnit || ing.unit)} &bull; {ing.totalCost.toFixed(3)} DT
                           </span>
@@ -628,10 +701,10 @@ export const ProductsView: React.FC = () => {
                   <label className="text-[11px] font-bold text-[#252A27]">Catégorie</label>
                   <select
                     value={editingProduct.categoryId || ''}
-                    onChange={e => setEditingProduct({ ...editingProduct, categoryId: e.target.value })}
+                    onChange={e => setEditingProduct({ ...editingProduct, categoryId: e.target.value, subCategoryId: undefined })}
                     className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
                   >
-                    {categories.map(c => (
+                    {topLevelCategories.map(c => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
@@ -651,6 +724,24 @@ export const ProductsView: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {safeCategories.some(c => c.parentId === editingProduct.categoryId) && (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#252A27]">Sous-catégorie (optionnel)</label>
+                  <select
+                    value={editingProduct.subCategoryId || ''}
+                    onChange={e => setEditingProduct({ ...editingProduct, subCategoryId: e.target.value || undefined })}
+                    className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
+                  >
+                    <option value="">Aucune</option>
+                    {safeCategories.filter(c => c.parentId === editingProduct.categoryId).map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
@@ -752,27 +843,49 @@ export const ProductsView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="Nom de la catégorie (ex: Vins Naturels)"
+                  placeholder="Nom de la catégorie ou sous-catégorie (ex: Vins Naturels)"
                   value={newCategoryName}
                   onChange={e => setNewCategoryName(e.target.value)}
                   className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
                 />
+                <select
+                  value={newCategoryParentId}
+                  onChange={e => setNewCategoryParentId(e.target.value)}
+                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
+                >
+                  <option value="">Catégorie principale (sans parent)</option>
+                  {topLevelCategories.map(c => (
+                    <option key={c.id} value={c.id}>
+                      Sous-catégorie de « {c.name} »
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="submit"
                   className="w-full py-2 rounded-lg bg-[#A4DEC2] text-[#252A27] text-xs font-bold border border-[#8BCFAE] hover:bg-[#8BCFAE] shadow-2xs"
                 >
-                  Ajouter la catégorie
+                  {newCategoryParentId ? 'Ajouter la sous-catégorie' : 'Ajouter la catégorie'}
                 </button>
               </form>
 
               <div className="divide-y divide-[#ECEEEA] max-h-60 overflow-y-auto border border-[#D9DDD8] rounded-xl bg-white">
-                {safeCategories.map(c => (
-                  <div key={c.id} className="p-2.5 flex items-center justify-between text-xs">
-                    <span className="font-bold text-[#252A27]">{c.name}</span>
-                    <span className="text-[#555D58]">
-                      {safeProducts.filter(p => p.categoryId === c.id).length} articles
-                    </span>
-                  </div>
+                {topLevelCategories.map(c => (
+                  <React.Fragment key={c.id}>
+                    <div className="p-2.5 flex items-center justify-between text-xs bg-[#F7F7F5]">
+                      <span className="font-bold text-[#252A27]">{c.name}</span>
+                      <span className="text-[#555D58]">
+                        {safeProducts.filter(p => p.categoryId === c.id).length} articles
+                      </span>
+                    </div>
+                    {safeCategories.filter(sc => sc.parentId === c.id).map(sc => (
+                      <div key={sc.id} className="pl-5 pr-2.5 py-2 flex items-center justify-between text-xs">
+                        <span className="text-[#555D58]">› {sc.name}</span>
+                        <span className="text-[#555D58]">
+                          {safeProducts.filter(p => p.subCategoryId === sc.id).length} articles
+                        </span>
+                      </div>
+                    ))}
+                  </React.Fragment>
                 ))}
               </div>
             </div>

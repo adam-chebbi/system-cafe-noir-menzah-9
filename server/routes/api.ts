@@ -12,6 +12,7 @@ import { HRService } from '../services/hrService.js';
 import { ExpenseService } from '../services/expenseService.js';
 import { ReportService } from '../services/reportService.js';
 import { DeterministicOcrService } from '../services/deterministicOcrService.js';
+import { TheoreticalConsumptionService } from '../services/theoreticalConsumptionService.js';
 
 const router = Router();
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
@@ -747,6 +748,23 @@ router.delete('/stock/audits/:id', (req, res) => {
   try {
     StockService.deleteInventoryAudit(req.params.id, (req.query.performedBy as string) || 'Manager');
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/stock/theoretical-consumption', (req, res) => {
+  try {
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+    res.json(TheoreticalConsumptionService.computeTheoreticalConsumption(startDate, endDate));
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/stock/theoretical-stock', (req, res) => {
+  try {
+    res.json(TheoreticalConsumptionService.computeTheoreticalStock());
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

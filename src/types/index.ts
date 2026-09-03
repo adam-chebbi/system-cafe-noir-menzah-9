@@ -94,6 +94,8 @@ export interface Category {
   order: number;
   color: string;
   active: boolean;
+  /** Référence à la catégorie parente. Absent = catégorie de premier niveau ; présent = sous-catégorie. */
+  parentId?: string;
 }
 
 export interface Ingredient {
@@ -110,6 +112,14 @@ export interface Ingredient {
 }
 
 export interface RecipeIngredient {
+  /**
+   * Type de ligne : 'ingredient' (matière première, défaut) ou 'subrecipe' (fiche technique
+   * d'un autre produit utilisée comme composant). Absent = 'ingredient' (rétrocompatibilité).
+   */
+  type?: 'ingredient' | 'subrecipe';
+  /** Renseigné uniquement si type === 'subrecipe' : productId de la sous-recette utilisée. */
+  subRecipeProductId?: string;
+  /** Pour type 'ingredient' : id de l'ingrédient. Pour type 'subrecipe' : non utilisé. */
   ingredientId: string;
   ingredientName: string;
   /**
@@ -153,7 +163,10 @@ export interface TechnicalRecipe {
   ingredients: RecipeIngredient[];
   totalIngredientsCost: number;
   suggestedSellingPrice: number;
+  /** Marge cible SAISIE PAR L'UTILISATEUR (objectif). Ne jamais écraser avec la marge calculée. */
   targetMarginPercentage: number;
+  /** Marge réelle CALCULÉE automatiquement à partir du prix de vente et du coût matière. Toujours recalculée côté serveur, jamais saisie manuellement. */
+  actualMarginPercentage?: number;
   allergens: string[];
   preparationSteps: string[];
   notes?: string;
@@ -178,6 +191,7 @@ export interface Product {
   id: string;
   name: string;
   categoryId: string;
+  subCategoryId?: string;
   description: string;
   price: number;
   tvaRate: number;
@@ -371,6 +385,40 @@ export interface InventoryAudit {
   totalDifferenceValue: number;
   createdAt: string;
   validatedAt?: string;
+}
+
+export interface IngredientConsumptionSummary {
+  ingredientId: string;
+  ingredientName: string;
+  unit: string;
+  unitCost: number;
+  theoreticalQuantityConsumed: number;
+  valueConsumed: number;
+  productBreakdown: { productId: string; productName: string; soldQuantity: number; consumedQuantity: number }[];
+}
+
+export interface TheoreticalConsumptionReport {
+  startDate: string | null;
+  endDate: string | null;
+  ingredients: IngredientConsumptionSummary[];
+  skippedSalesLines: number;
+  skippedNoRecipeCount: number;
+  skippedNoRecipeProducts: string[];
+}
+
+export interface IngredientTheoreticalStock {
+  ingredientId: string;
+  ingredientName: string;
+  unit: string;
+  unitCost: number;
+  referenceDate: string;
+  referenceStock: number;
+  referenceSource: 'audit' | 'no_audit_baseline';
+  movementsAdjustment: number;
+  theoreticalConsumptionSinceReference: number;
+  theoreticalStock: number;
+  currentLedgerStock: number;
+  ledgerDrift: number;
 }
 
 export interface Supplier {

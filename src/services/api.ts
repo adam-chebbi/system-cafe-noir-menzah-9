@@ -2,7 +2,8 @@ import {
   User, Space, Table, Reservation, PlanElement, TableHistoryItem, Category, Ingredient, TechnicalRecipe,
   Product, Order, Sale, StockMovement, StockWaste, InventoryAudit,
   Supplier, PurchaseOrder, SupplierInvoice, Expense, Shift, AttendanceRecord,
-  LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession, CashMovement
+  LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession, CashMovement,
+  TheoreticalConsumptionReport, IngredientTheoreticalStock
 } from '../types/index';
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -338,6 +339,14 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ reason, performedBy })
   }),
+  getTheoreticalConsumption: (startDate?: string, endDate?: string) => {
+    const query = new URLSearchParams();
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
+    const qs = query.toString();
+    return fetchJson<TheoreticalConsumptionReport>(`/api/stock/theoretical-consumption${qs ? `?${qs}` : ''}`);
+  },
+  getTheoreticalStock: () => fetchJson<IngredientTheoreticalStock[]>('/api/stock/theoretical-stock'),
 
   // Suppliers & OCR
   getSuppliers: () => fetchJson<Supplier[]>('/api/suppliers'),

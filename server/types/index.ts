@@ -97,6 +97,7 @@ export interface Category {
   order: number;
   color: string;
   active: boolean;
+  parentId?: string;
 }
 
 export interface Ingredient {
@@ -113,6 +114,10 @@ export interface Ingredient {
 }
 
 export interface RecipeIngredient {
+  /** 'ingredient' (défaut) ou 'subrecipe' (fiche technique d'un autre produit utilisée comme composant). */
+  type?: 'ingredient' | 'subrecipe';
+  /** Renseigné uniquement si type === 'subrecipe' : productId de la sous-recette utilisée. */
+  subRecipeProductId?: string;
   ingredientId: string;
   ingredientName: string;
   /**
@@ -146,7 +151,10 @@ export interface TechnicalRecipe {
   ingredients: RecipeIngredient[];
   totalIngredientsCost: number;
   suggestedSellingPrice: number;
+  /** Marge cible SAISIE PAR L'UTILISATEUR (objectif). Ne jamais écraser avec la marge calculée. */
   targetMarginPercentage: number;
+  /** Marge réelle CALCULÉE automatiquement (prix de vente vs coût matière). Jamais saisie manuellement. */
+  actualMarginPercentage?: number;
   allergens: string[];
   preparationSteps: string[];
   notes?: string;
@@ -169,6 +177,7 @@ export interface Product {
   id: string;
   name: string;
   categoryId: string;
+  subCategoryId?: string;
   description: string;
   price: number;
   tvaRate: number; // e.g. 10 for 10%, 20 for 20%

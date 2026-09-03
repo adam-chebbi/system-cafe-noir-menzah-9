@@ -9,8 +9,18 @@ export class CatalogService {
     return db.get('categories').sort((a, b) => a.order - b.order);
   }
 
+  /** Interdit plus de 2 niveaux (Catégorie → Sous-catégorie) : le parent visé ne doit pas être lui-même une sous-catégorie. */
+  private static assertValidParent(categories: Category[], parentId: string | undefined, selfId?: string): void {
+    if (!parentId) return;
+    if (parentId === selfId) throw new Error('Une catégorie ne peut pas être sa propre catégorie parente.');
+    const parent = categories.find(c => c.id === parentId);
+    if (!parent) throw new Error('Catégorie parente introuvable.');
+    if (parent.parentId) throw new Error('Impossible de créer plus de 2 niveaux : la catégorie parente choisie est déjà une sous-catégorie.');
+  }
+
   public static createCategory(data: Omit<Category, 'id'>, performedBy: string): Category {
     const categories = db.get('categories');
+    this.assertValidParent(categories, data.parentId);
     const newCategory: Category = {
       ...data,
       id: `cat_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`
@@ -25,19 +35,38 @@ export class CatalogService {
     const categories = db.get('categories');
     const idx = categories.findIndex(c => c.id === id);
     if (idx === -1) throw new Error('Catégorie non trouvée');
+    if ('parentId' in updates) {
+      this.assertValidParent(categories, updates.parentId, id);
+      const hasChildren = categories.some(c => c.parentId === id);
+      if (updates.parentId && hasChildren) {
+        throw new Error('Impossible de transformer en sous-catégorie : cette catégorie a déjà des sous-catégories.');
+      }
+    }
     categories[idx] = { ...categories[idx], ...updates };
     db.set('categories', categories);
     db.logAudit('Mise à jour Catégorie', 'admin', `Modification de la catégorie ${categories[idx].name}`, performedBy);
     return categories[idx];
   }
 
+  public static getSubCategories(categoryId: string): Category[] {
+    return (db.get('categories') || [])
+      .filter(c => c && c.parentId === categoryId)
+      .sort((a, b) => a.order - b.order);
+  }
+
   public static deleteCategory(id: string, performedBy: string): void {
     const categories = db.get('categories') || [];
     const cat = categories.find(c => c && c.id === id);
     if (!cat) throw new Error('Catégorie non trouvée');
-    // Check if products exist in category
+
+    const subCategoryCount = categories.filter(c => c && c.parentId === id).length;
+    if (subCategoryCount > 0) {
+      throw new Error(`Impossible de supprimer : ${subCategoryCount} sous-catégorie(s) sont rattachées à cette catégorie.`);
+    }
+
+    // Check if products exist in category (as category or sub-category)
     const products = db.get('products') || [];
-    const count = products.filter(p => p && p.categoryId === id).length;
+    const count = products.filter(p => p && (p.categoryId === id || p.subCategoryId === id)).length;
     if (count > 0) {
       throw new Error(`Impossible de supprimer : ${count} produit(s) sont rattachés à cette catégorie.`);
     }
@@ -99,27 +128,111 @@ export class CatalogService {
     return db.get('recipes').find(r => r.productId === productId);
   }
 
-  public static saveRecipe(data: Omit<TechnicalRecipe, 'id' | 'updatedAt'>, performedBy: string): TechnicalRecipe {
-    const recipes = db.get('recipes');
-    const products = db.get('products');
-    const ingredients = db.get('ingredients');
+  /** Profondeur maximale d'imbrication de sous-recettes autorisée (garde-fou, en plus de la détection de cycle). */
+  private static readonly MAX_SUBRECIPE_DEPTH = 6;
 
-    // Récupérer le mode de calcul de plage configuré (par défaut : 'max' = prudent)
-    const { recipeRangeCalcMode } = db.getSettings();
-    const mode: RangeCalcMode = recipeRangeCalcMode;
+  /** Coût par portion d'une fiche technique utilisée comme sous-recette (composant) d'une autre recette. */
+  private static subRecipeCostPerPortion(recipe: TechnicalRecipe): number {
+    return recipe.portionYield > 0 ? recipe.totalIngredientsCost / recipe.portionYield : 0;
+  }
 
+  /**
+   * Vérifie qu'une ligne de sous-recette ne crée pas de cycle (direct ou transitif) et ne dépasse
+   * pas la profondeur maximale autorisée. Lève une erreur explicite sinon.
+   */
+  private static assertNoRecipeCycle(
+    recipes: TechnicalRecipe[],
+    productId: string,
+    ingredientLines: TechnicalRecipe['ingredients'],
+    depth = 0
+  ): void {
+    if (depth > this.MAX_SUBRECIPE_DEPTH) {
+      throw new Error(`Profondeur de sous-recettes trop importante (maximum ${this.MAX_SUBRECIPE_DEPTH} niveaux).`);
+    }
+    for (const line of ingredientLines) {
+      if (line.type !== 'subrecipe' || !line.subRecipeProductId) continue;
+      if (line.subRecipeProductId === productId) {
+        throw new Error('Une fiche technique ne peut pas se référencer elle-même comme sous-recette (directement ou via une chaîne).');
+      }
+      const childRecipe = recipes.find(r => r.productId === line.subRecipeProductId);
+      if (childRecipe) {
+        this.assertNoRecipeCycle(recipes, productId, childRecipe.ingredients, depth + 1);
+      }
+    }
+  }
+
+  /**
+   * Résout récursivement une fiche technique (vendue en quantité `quantitySold`) jusqu'aux
+   * ingrédients bruts, en développant les lignes de sous-recette. Retourne une Map
+   * ingredientId → quantité totale à déduire (unité stock de l'ingrédient).
+   *
+   * Logique UNIQUE et partagée entre la déduction de stock en temps réel (StockService) et le
+   * calcul indépendant de la consommation théorique, afin de garantir que les deux mécanismes
+   * s'accordent toujours sur "combien tel ingrédient est réellement consommé par tel produit".
+   */
+  public static expandRecipeToRawIngredients(
+    productId: string,
+    quantitySold: number,
+    visited: Set<string> = new Set()
+  ): Map<string, number> {
+    const result = new Map<string, number>();
+    if (quantitySold <= 0 || visited.has(productId)) return result;
+
+    const recipes: TechnicalRecipe[] = db.get('recipes') || [];
+    const recipe = recipes.find(r => r.productId === productId);
+    if (!recipe) return result;
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(productId);
+
+    const portionFactor = quantitySold / (recipe.portionYield || 1);
+
+    for (const item of recipe.ingredients) {
+      if (item.type === 'subrecipe' && item.subRecipeProductId) {
+        const subPortionsUsed = item.quantity * portionFactor;
+        const subMap = this.expandRecipeToRawIngredients(item.subRecipeProductId, subPortionsUsed, nextVisited);
+        for (const [ingId, qty] of subMap) {
+          result.set(ingId, (result.get(ingId) || 0) + qty);
+        }
+      } else {
+        const deductQty = item.quantity * portionFactor;
+        result.set(item.ingredientId, (result.get(item.ingredientId) || 0) + deductQty);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Recalcule les lignes d'ingrédients (matières premières ET sous-recettes), le coût matière total
+   * et la marge RÉELLE (calculée) d'une fiche technique à partir des coûts ACTUELS. La marge cible
+   * (saisie par l'utilisateur) n'est jamais touchée ici — voir saveRecipe.
+   */
+  private static recalcRecipeIngredients(
+    items: TechnicalRecipe['ingredients'],
+    sellingPrice: number,
+    ingredients: Ingredient[],
+    recipes: TechnicalRecipe[],
+    mode: RangeCalcMode
+  ): { calculatedIngredients: TechnicalRecipe['ingredients']; totalCostRounded: number; actualMargin: number } {
     let totalCost = 0;
 
-    const calculatedIngredients = data.ingredients.map(item => {
-      const ing = ingredients.find(i => i.id === item.ingredientId);
-      const unitCost = ing ? ing.costPerUnit : (item.unitCost || 0);
-      const stockUnit = ing ? ing.unit : item.unit;
+    const calculatedIngredients = items.map(item => {
+      const isSubRecipe = item.type === 'subrecipe' && !!item.subRecipeProductId;
+      const subRecipe = isSubRecipe ? recipes.find(r => r.productId === item.subRecipeProductId) : undefined;
+      const ing = !isSubRecipe ? ingredients.find(i => i.id === item.ingredientId) : undefined;
+
+      const unitCost = isSubRecipe
+        ? (subRecipe ? this.subRecipeCostPerPortion(subRecipe) : (item.unitCost || 0))
+        : (ing ? ing.costPerUnit : (item.unitCost || 0));
+      const stockUnit = isSubRecipe ? 'portion' : (ing ? ing.unit : item.unit);
 
       // Rétrocompatibilité : si quantityMin n'est pas défini (ancienne structure),
       // on utilise quantity directement comme quantityMin et recipeUnit = stockUnit.
       const quantityMin: number = item.quantityMin ?? item.quantity;
       const quantityMax: number | undefined = item.quantityMax;
-      const recipeUnit: string = item.recipeUnit ?? stockUnit;
+      // Les lignes de sous-recette sont toujours exprimées en "portion" (pas de conversion d'unité).
+      const recipeUnit: string = isSubRecipe ? 'portion' : (item.recipeUnit ?? stockUnit);
 
       // Calcul interne : conversion vers l'unité stock + coût ligne
       let calcQtyInStockUnit: number;
@@ -136,7 +249,7 @@ export class CatalogService {
       } catch (convErr: any) {
         // Si la conversion est impossible (unités incompatibles), on enregistre dans le journal
         // et on utilise quantityMin directement en guise de fallback sécuritaire.
-        console.error(`[saveRecipe] Conversion échouée pour ${item.ingredientName}: ${convErr.message}`);
+        console.error(`[recalcRecipeIngredients] Conversion échouée pour ${item.ingredientName}: ${convErr.message}`);
         calcQtyInStockUnit = quantityMin;
         lineCost = quantityMin * unitCost;
       }
@@ -149,10 +262,12 @@ export class CatalogService {
 
       return {
         ...item,
+        type: (isSubRecipe ? 'subrecipe' : 'ingredient') as 'ingredient' | 'subrecipe',
+        subRecipeProductId: isSubRecipe ? item.subRecipeProductId : undefined,
         quantityMin,
         quantityMax,
         recipeUnit,
-        // quantity = valeur EN UNITÉ STOCK utilisée pour la déduction (rétrocompat)
+        // quantity = valeur EN UNITÉ STOCK ('portion' pour une sous-recette) utilisée pour la déduction
         quantity: Number(calcQtyInStockUnit.toFixed(6)),
         unit: stockUnit,
         unitCost,
@@ -162,8 +277,154 @@ export class CatalogService {
     });
 
     const totalCostRounded = Number(totalCost.toFixed(2));
-    const sellingPrice = data.suggestedSellingPrice || 0;
-    const margin = sellingPrice > 0 ? Number((((sellingPrice - totalCostRounded) / sellingPrice) * 100).toFixed(1)) : 0;
+    const actualMargin = sellingPrice > 0 ? Number((((sellingPrice - totalCostRounded) / sellingPrice) * 100).toFixed(1)) : 0;
+
+    return { calculatedIngredients, totalCostRounded, actualMargin };
+  }
+
+  /**
+   * Recalcule en cascade toutes les fiches qui utilisent, directement ou via une chaîne de
+   * sous-recettes, l'un des productId fournis comme composant. Les productId de départ ne sont PAS
+   * recalculés eux-mêmes ici (déjà à jour par l'appelant) — seuls leurs parents le sont.
+   */
+  private static cascadeRecalculateParents(startProductIds: Set<string>, performedBy: string): TechnicalRecipe[] {
+    const recipes: TechnicalRecipe[] = db.get('recipes') || [];
+    const ingredients = db.get('ingredients') || [];
+    const { recipeRangeCalcMode } = db.getSettings();
+    const mode: RangeCalcMode = recipeRangeCalcMode;
+
+    const affectedProductIds = new Set<string>();
+    let frontier = startProductIds;
+    let pass = 0;
+
+    while (frontier.size > 0 && pass < this.MAX_SUBRECIPE_DEPTH + 1) {
+      pass++;
+      const nextFrontier = new Set<string>();
+      for (const targetId of frontier) {
+        for (const r of recipes) {
+          if (
+            r.productId !== targetId &&
+            !affectedProductIds.has(r.productId) &&
+            !startProductIds.has(r.productId) &&
+            r.ingredients.some(item => item.type === 'subrecipe' && item.subRecipeProductId === targetId)
+          ) {
+            nextFrontier.add(r.productId);
+          }
+        }
+      }
+
+      for (const productId of nextFrontier) {
+        const idx = recipes.findIndex(r => r.productId === productId);
+        if (idx === -1) continue;
+        const recipe = recipes[idx];
+        const { calculatedIngredients, totalCostRounded, actualMargin } = this.recalcRecipeIngredients(
+          recipe.ingredients, recipe.suggestedSellingPrice || 0, ingredients, recipes, mode
+        );
+        recipes[idx] = {
+          ...recipe,
+          ingredients: calculatedIngredients,
+          totalIngredientsCost: totalCostRounded,
+          actualMarginPercentage: actualMargin,
+          updatedAt: new Date().toISOString()
+        };
+        affectedProductIds.add(productId);
+      }
+
+      frontier = nextFrontier;
+    }
+
+    const affected = recipes.filter(r => affectedProductIds.has(r.productId));
+    if (affected.length > 0) {
+      db.set('recipes', recipes);
+      db.logAudit(
+        'Recalcul Automatique Fiches Techniques (sous-recettes)',
+        'admin',
+        `${affected.length} fiche(s) technique(s) recalculée(s) en cascade suite à la mise à jour d'une sous-recette (${affected.map(r => r.productName).join(', ')})`,
+        performedBy
+      );
+    }
+    return affected;
+  }
+
+  /**
+   * Recalcule le coût matière et la marge réelle de toutes les fiches techniques utilisant un
+   * ingrédient donné — directement, puis en cascade via toute chaîne de sous-recettes. Déclenché
+   * automatiquement lorsque le coût de l'ingrédient change (édition manuelle, réception de stock,
+   * traitement de facture fournisseur), afin que le coût matière et la marge affichés restent
+   * toujours à jour sans intervention manuelle sur chaque fiche.
+   */
+  public static recalculateRecipesForIngredient(ingredientId: string, performedBy: string): TechnicalRecipe[] {
+    const recipes: TechnicalRecipe[] = db.get('recipes') || [];
+    const ingredients = db.get('ingredients') || [];
+    const { recipeRangeCalcMode } = db.getSettings();
+    const mode: RangeCalcMode = recipeRangeCalcMode;
+
+    const directlyAffected: TechnicalRecipe[] = [];
+    const directProductIds = new Set<string>();
+
+    const updatedRecipes = recipes.map(recipe => {
+      if (!recipe.ingredients.some(item => item.type !== 'subrecipe' && item.ingredientId === ingredientId)) return recipe;
+
+      const { calculatedIngredients, totalCostRounded, actualMargin } = this.recalcRecipeIngredients(
+        recipe.ingredients,
+        recipe.suggestedSellingPrice || 0,
+        ingredients,
+        recipes,
+        mode
+      );
+
+      const updated: TechnicalRecipe = {
+        ...recipe,
+        ingredients: calculatedIngredients,
+        totalIngredientsCost: totalCostRounded,
+        actualMarginPercentage: actualMargin,
+        updatedAt: new Date().toISOString()
+      };
+      directlyAffected.push(updated);
+      directProductIds.add(updated.productId);
+      return updated;
+    });
+
+    if (directlyAffected.length > 0) {
+      db.set('recipes', updatedRecipes);
+      db.logAudit(
+        'Recalcul Automatique Fiches Techniques',
+        'admin',
+        `${directlyAffected.length} fiche(s) technique(s) recalculée(s) suite à un changement de coût d'ingrédient (${directlyAffected.map(r => r.productName).join(', ')})`,
+        performedBy
+      );
+    }
+
+    const cascaded = directProductIds.size > 0 ? this.cascadeRecalculateParents(directProductIds, performedBy) : [];
+
+    return [...directlyAffected, ...cascaded];
+  }
+
+  public static saveRecipe(data: Omit<TechnicalRecipe, 'id' | 'updatedAt'>, performedBy: string): TechnicalRecipe {
+    const recipes = db.get('recipes');
+    const products = db.get('products');
+    const ingredients = db.get('ingredients');
+
+    // Validation anti-cycle pour les lignes de sous-recette avant tout calcul
+    this.assertNoRecipeCycle(recipes, data.productId, data.ingredients || []);
+
+    // Récupérer le mode de calcul de plage configuré (par défaut : 'max' = prudent)
+    const { recipeRangeCalcMode } = db.getSettings();
+    const mode: RangeCalcMode = recipeRangeCalcMode;
+
+    const { calculatedIngredients, totalCostRounded, actualMargin } = this.recalcRecipeIngredients(
+      data.ingredients,
+      data.suggestedSellingPrice || 0,
+      ingredients,
+      recipes,
+      mode
+    );
+
+    // Marge CIBLE : uniquement la valeur saisie par l'utilisateur — jamais écrasée par le calcul.
+    const existingRecipe = recipes.find(r => r.productId === data.productId);
+    const targetMargin = typeof data.targetMarginPercentage === 'number' && !isNaN(data.targetMarginPercentage)
+      ? data.targetMarginPercentage
+      : (existingRecipe?.targetMarginPercentage ?? 70);
 
     const existingIdx = recipes.findIndex(r => r.productId === data.productId);
     let recipeResult: TechnicalRecipe;
@@ -174,7 +435,8 @@ export class CatalogService {
         ...data,
         ingredients: calculatedIngredients,
         totalIngredientsCost: totalCostRounded,
-        targetMarginPercentage: margin,
+        targetMarginPercentage: targetMargin,
+        actualMarginPercentage: actualMargin,
         updatedAt: new Date().toISOString()
       };
       recipes[existingIdx] = recipeResult;
@@ -184,7 +446,8 @@ export class CatalogService {
         id: `rec_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         ingredients: calculatedIngredients,
         totalIngredientsCost: totalCostRounded,
-        targetMarginPercentage: margin,
+        targetMarginPercentage: targetMargin,
+        actualMarginPercentage: actualMargin,
         updatedAt: new Date().toISOString()
       };
       recipes.push(recipeResult);
@@ -201,9 +464,13 @@ export class CatalogService {
     db.logAudit(
       'Enregistrement Fiche Technique',
       'admin',
-      `Fiche technique pour ${data.productName} (Coût matière: ${totalCostRounded.toFixed(3)} DT, Marge: ${margin}%, Mode plage: ${mode})`,
+      `Fiche technique pour ${data.productName} (Coût matière: ${totalCostRounded.toFixed(3)} DT, Marge réelle: ${actualMargin}%, Marge cible: ${targetMargin}%, Mode plage: ${mode})`,
       performedBy
     );
+
+    // Si cette fiche est elle-même utilisée comme sous-recette ailleurs, propager le recalcul aux parents.
+    this.cascadeRecalculateParents(new Set([data.productId]), performedBy);
+
     return recipeResult;
   }
 
@@ -212,6 +479,11 @@ export class CatalogService {
     const products = db.get('products') || [];
     const rec = recipes.find(r => r && r.productId === productId);
     if (!rec) throw new Error('Fiche technique non trouvée');
+
+    const dependents = recipes.filter(r => r.productId !== productId && r.ingredients.some(item => item.type === 'subrecipe' && item.subRecipeProductId === productId));
+    if (dependents.length > 0) {
+      throw new Error(`Impossible de supprimer : cette fiche est utilisée comme sous-recette dans ${dependents.length} autre(s) fiche(s) (${dependents.map(r => r.productName).join(', ')}).`);
+    }
 
     db.set('recipes', recipes.filter(r => r && r.productId !== productId));
 
@@ -229,13 +501,15 @@ export class CatalogService {
     const products = db.get('products');
     const categories = db.get('categories');
 
-    const headers = ['ID', 'Nom', 'Categorie', 'Prix', 'TVA', 'Disponible', 'Station', 'Description', 'Image'];
+    const headers = ['ID', 'Nom', 'Categorie', 'SousCategorie', 'Prix', 'TVA', 'Disponible', 'Station', 'Description', 'Image'];
     const rows = products.map(p => {
       const cat = categories.find(c => c.id === p.categoryId)?.name || 'Inconnue';
+      const subCat = p.subCategoryId ? (categories.find(c => c.id === p.subCategoryId)?.name || '') : '';
       return [
         p.id,
         `"${p.name.replace(/"/g, '""')}"`,
         `"${cat.replace(/"/g, '""')}"`,
+        `"${subCat.replace(/"/g, '""')}"`,
         p.price,
         p.tvaRate,
         p.available ? 'OUI' : 'NON',
@@ -268,9 +542,14 @@ export class CatalogService {
         continue;
       }
 
-      const [idOrName, nameRaw, categoryRaw, priceRaw, tvaRaw, availableRaw, stationRaw, descRaw, imageRaw] = parts;
+      // Rétrocompatibilité : l'ancien format (sans colonne SousCategorie) a 9 colonnes utiles au lieu de 10.
+      const hasSubCategoryColumn = parts.length >= 10;
+      const [idOrName, nameRaw, categoryRaw, subCategoryRaw, priceRaw, tvaRaw, availableRaw, stationRaw, descRaw, imageRaw] = hasSubCategoryColumn
+        ? parts
+        : [parts[0], parts[1], parts[2], '', parts[3], parts[4], parts[5], parts[6], parts[7], parts[8]];
       const name = nameRaw || idOrName;
       const catName = categoryRaw || 'Cafés Spécialité';
+      const subCatName = (subCategoryRaw || '').trim();
       const price = parseFloat(priceRaw) || 0;
       const tva = parseFloat(tvaRaw) || 7;
       const available = availableRaw ? (availableRaw.toUpperCase() === 'OUI' || availableRaw.toUpperCase() === 'TRUE' || availableRaw === '1') : true;
@@ -283,8 +562,8 @@ export class CatalogService {
         continue;
       }
 
-      // Match or create category
-      let category = categories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+      // Match or create category (catégorie de premier niveau uniquement)
+      let category = categories.find(c => !c.parentId && c.name.toLowerCase() === catName.toLowerCase());
       if (!category) {
         category = {
           id: `cat_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -298,6 +577,25 @@ export class CatalogService {
         categories.push(category);
       }
 
+      // Match or create sub-category (rattachée à la catégorie ci-dessus), si renseignée
+      let subCategory: typeof category | undefined;
+      if (subCatName) {
+        subCategory = categories.find(c => c.parentId === category!.id && c.name.toLowerCase() === subCatName.toLowerCase());
+        if (!subCategory) {
+          subCategory = {
+            id: `cat_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            name: subCatName,
+            slug: subCatName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            icon: 'Coffee',
+            order: categories.filter(c => c.parentId === category!.id).length + 1,
+            color: '#2B422F',
+            active: true,
+            parentId: category.id
+          };
+          categories.push(subCategory);
+        }
+      }
+
       // Check existing product
       const existing = products.find(p => p.name.toLowerCase() === name.toLowerCase());
       if (existing) {
@@ -306,6 +604,7 @@ export class CatalogService {
         existing.available = available;
         existing.description = description || existing.description;
         existing.categoryId = category.id;
+        existing.subCategoryId = subCategory?.id;
         existing.preparationStation = station as any;
         if (imageUrl) existing.imageUrl = imageUrl;
       } else {
@@ -313,6 +612,7 @@ export class CatalogService {
           id: `prod_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
           name,
           categoryId: category.id,
+          subCategoryId: subCategory?.id,
           description,
           price,
           tvaRate: tva,

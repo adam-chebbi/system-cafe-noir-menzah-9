@@ -13,7 +13,7 @@ import {
 } from '../../utils/unitConversion';
 import {
   Plus, Trash2, X,
-  Settings, Info, ChevronDown, ChevronUp
+  Settings, Info, ChevronDown, ChevronUp, Layers, TrendingUp, TrendingDown, CheckCircle2
 } from 'lucide-react';
 
 interface TechnicalRecipeModalProps {
@@ -40,8 +40,10 @@ const RANGE_MODE_SHORT: Record<RangeCalcMode, string> = {
   min: 'borne min'
 };
 
-/** Ligne d'ingrédient en cours de saisie dans le formulaire */
+/** Ligne d'ingrédient OU de sous-recette en cours de saisie dans le formulaire */
 interface IngredientFormRow {
+  type: 'ingredient' | 'subrecipe';
+  /** Pour type 'ingredient' : id de l'ingrédient. Pour 'subrecipe' : le productId de la sous-recette. */
   ingredientId: string;
   ingredientName: string;
   quantityMin: number;
@@ -70,7 +72,9 @@ function rowToRecipeIngredient(row: IngredientFormRow, mode: RangeCalcMode): Rec
   }
 
   return {
-    ingredientId: row.ingredientId,
+    type: row.type,
+    subRecipeProductId: row.type === 'subrecipe' ? row.ingredientId : undefined,
+    ingredientId: row.type === 'ingredient' ? row.ingredientId : '',
     ingredientName: row.ingredientName,
     quantityMin: row.quantityMin,
     quantityMax: row.quantityMax,
@@ -84,10 +88,25 @@ function rowToRecipeIngredient(row: IngredientFormRow, mode: RangeCalcMode): Rec
 }
 
 /** Convertit un RecipeIngredient stocké vers la form row pour l'édition */
-function recipeIngToRow(item: RecipeIngredient, catalog: Ingredient[]): IngredientFormRow {
+function recipeIngToRow(item: RecipeIngredient, catalog: Ingredient[], recipes: TechnicalRecipe[]): IngredientFormRow {
+  if (item.type === 'subrecipe' && item.subRecipeProductId) {
+    const subRecipe = recipes.find(r => r.productId === item.subRecipeProductId);
+    const unitCost = subRecipe && subRecipe.portionYield > 0 ? subRecipe.totalIngredientsCost / subRecipe.portionYield : item.unitCost;
+    return {
+      type: 'subrecipe',
+      ingredientId: item.subRecipeProductId,
+      ingredientName: item.ingredientName,
+      quantityMin: item.quantityMin ?? item.quantity,
+      quantityMax: item.quantityMax,
+      recipeUnit: 'portion',
+      stockUnit: 'portion',
+      unitCost
+    };
+  }
   const ing = catalog.find(i => i.id === item.ingredientId);
   const stockUnit = ing?.unit ?? item.unit;
   return {
+    type: 'ingredient',
     ingredientId: item.ingredientId,
     ingredientName: item.ingredientName,
     quantityMin: item.quantityMin ?? item.quantity,
@@ -105,6 +124,7 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
   const { showRouteNotification } = useSystem();
 
   const [ingredientsCatalog, setIngredientsCatalog] = useState<Ingredient[]>([]);
+  const [allRecipes, setAllRecipes] = useState<TechnicalRecipe[]>([]);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -116,6 +136,7 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
     preparationTimeMinutes: 3,
     ingredients: [],
     suggestedSellingPrice: 0,
+    targetMarginPercentage: 70,
     allergens: [],
     preparationSteps: [''],
     notes: ''
@@ -136,12 +157,13 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
           api.getSettings()
         ]);
         setIngredientsCatalog(ings);
+        setAllRecipes(recipes);
         setRangeCalcMode(settings.recipeRangeCalcMode || 'max');
 
         const existing = recipes.find(r => r.productId === product.id);
         if (existing) {
           setRecipe(existing);
-          setRows(existing.ingredients.map(item => recipeIngToRow(item, ings)));
+          setRows(existing.ingredients.map(item => recipeIngToRow(item, ings, recipes)));
         } else {
           setRecipe({
             productId: product.id,
@@ -150,6 +172,7 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
             preparationTimeMinutes: 3,
             ingredients: [],
             suggestedSellingPrice: product.price,
+            targetMarginPercentage: 70,
             allergens: [],
             preparationSteps: [''],
             notes: ''
@@ -167,12 +190,31 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
 
   if (!isOpen || !product) return null;
 
+  // ── Sous-recettes disponibles (toute fiche existante, hors le produit courant et tout ce qui
+  // créerait un cycle direct — la protection définitive contre les cycles transitifs est côté serveur) ──
+
+  const wouldCreateCycle = (candidateProductId: string): boolean => {
+    const visited = new Set<string>();
+    const walk = (pid: string): boolean => {
+      if (pid === product.id) return true;
+      if (visited.has(pid)) return false;
+      visited.add(pid);
+      const r = allRecipes.find(rec => rec.productId === pid);
+      if (!r) return false;
+      return r.ingredients.some(item => item.type === 'subrecipe' && item.subRecipeProductId && walk(item.subRecipeProductId));
+    };
+    return walk(candidateProductId);
+  };
+
+  const availableSubRecipes = allRecipes.filter(r => r.productId !== product.id && !wouldCreateCycle(r.productId));
+
   // ── Gestion des lignes d'ingrédients ──────────────────────────────────
 
   const handleAddIngredient = () => {
     if (ingredientsCatalog.length === 0) return;
     const defaultIng = ingredientsCatalog[0];
     setRows(prev => [...prev, {
+      type: 'ingredient',
       ingredientId: defaultIng.id,
       ingredientName: defaultIng.name,
       quantityMin: 1,
@@ -180,6 +222,22 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
       recipeUnit: defaultIng.unit,
       stockUnit: defaultIng.unit,
       unitCost: defaultIng.costPerUnit
+    }]);
+  };
+
+  const handleAddSubRecipe = () => {
+    if (availableSubRecipes.length === 0) return;
+    const defaultSub = availableSubRecipes[0];
+    const unitCost = defaultSub.portionYield > 0 ? defaultSub.totalIngredientsCost / defaultSub.portionYield : 0;
+    setRows(prev => [...prev, {
+      type: 'subrecipe',
+      ingredientId: defaultSub.productId,
+      ingredientName: defaultSub.productName,
+      quantityMin: 1,
+      quantityMax: undefined,
+      recipeUnit: 'portion',
+      stockUnit: 'portion',
+      unitCost
     }]);
   };
 
@@ -195,6 +253,20 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
       unitCost: ing.costPerUnit,
       quantityMin: r.quantityMin,
       quantityMax: r.quantityMax
+    }));
+  };
+
+  const handleChangeSubRecipe = (idx: number, subProductId: string) => {
+    const sub = allRecipes.find(r => r.productId === subProductId);
+    if (!sub) return;
+    const unitCost = sub.portionYield > 0 ? sub.totalIngredientsCost / sub.portionYield : 0;
+    setRows(prev => prev.map((r, i) => i !== idx ? r : {
+      ...r,
+      ingredientId: sub.productId,
+      ingredientName: sub.productName,
+      unitCost,
+      recipeUnit: 'portion',
+      stockUnit: 'portion'
     }));
   };
 
@@ -230,8 +302,14 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
 
   const sellingPrice = recipe.suggestedSellingPrice || product.price || 1;
   const grossMargin = sellingPrice - totalIngredientsCost;
-  const marginPercentage = Number(((grossMargin / sellingPrice) * 100).toFixed(1));
+  // Marge RÉELLE calculée automatiquement (jamais saisie) — à comparer à la marge cible saisie par l'utilisateur.
+  const actualMarginPercentage = Number(((grossMargin / sellingPrice) * 100).toFixed(1));
   const foodCostRatio = Number(((totalIngredientsCost / sellingPrice) * 100).toFixed(1));
+  const targetMarginPercentage = recipe.targetMarginPercentage ?? 70;
+  const marginComparison: 'below' | 'reached' | 'exceeded' =
+    actualMarginPercentage < targetMarginPercentage ? 'below'
+      : actualMarginPercentage > targetMarginPercentage ? 'exceeded'
+      : 'reached';
 
   // ── Allergens ──────────────────────────────────────────────────────────
 
@@ -273,7 +351,9 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
         productName: product.name,
         suggestedSellingPrice: sellingPrice,
         totalIngredientsCost: Number(totalIngredientsCost.toFixed(2)),
-        targetMarginPercentage: marginPercentage,
+        // Marge CIBLE : uniquement la valeur saisie par l'utilisateur. La marge réelle est
+        // recalculée et stockée séparément par le serveur (actualMarginPercentage) — jamais ici.
+        targetMarginPercentage,
         ingredients: recipeIngredients
       } as any, currentUser?.name || 'Admin');
 
@@ -316,7 +396,7 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
 
           {/* KPIs */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="p-2.5 rounded-xl bg-white border border-[#D9DDD8] shadow-2xs">
               <span className="text-[10px] font-bold text-[#555D58] uppercase">Coût Matière</span>
               <p className="text-sm sm:text-base font-mono font-bold text-[#252A27] mt-0.5">
@@ -332,11 +412,40 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
               <span className="text-[10px] text-[#555D58]">Marge: {grossMargin.toFixed(3)} DT</span>
             </div>
             <div className="p-2.5 rounded-xl bg-white border border-[#D9DDD8] shadow-2xs">
-              <span className="text-[10px] font-bold text-[#555D58] uppercase">Taux Marge</span>
-              <p className={`text-sm sm:text-base font-mono font-bold mt-0.5 ${marginPercentage >= 70 ? 'text-emerald-800' : 'text-amber-800'}`}>
-                {marginPercentage} %
+              <span className="text-[10px] font-bold text-[#555D58] uppercase">Marge Réelle</span>
+              <p className="text-sm sm:text-base font-mono font-bold mt-0.5 text-[#252A27]">
+                {actualMarginPercentage} %
               </p>
-              <span className="text-[10px] text-[#555D58]">Cible: ≥70%</span>
+              <span className="text-[10px] text-[#555D58]">Calculée automatiquement</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white border border-[#D9DDD8] shadow-2xs space-y-1">
+              <span className="text-[10px] font-bold text-[#555D58] uppercase">Marge Cible</span>
+              <div className="flex items-center space-x-1">
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  value={targetMarginPercentage}
+                  onChange={e => setRecipe({ ...recipe, targetMarginPercentage: parseFloat(e.target.value) || 0 })}
+                  className="w-14 p-1 bg-[#F7F7F5] border border-[#D9DDD8] rounded-md text-xs font-mono font-bold text-center text-[#252A27]"
+                />
+                <span className="text-xs font-bold text-[#555D58]">%</span>
+              </div>
+              <span
+                className={`inline-flex items-center space-x-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                  marginComparison === 'below'
+                    ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                    : marginComparison === 'reached'
+                    ? 'bg-[#E8F5EE] text-[#2B6245] border border-[#C5E8D5]'
+                    : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                }`}
+              >
+                {marginComparison === 'below' && <TrendingDown className="w-2.5 h-2.5" />}
+                {marginComparison === 'reached' && <CheckCircle2 className="w-2.5 h-2.5" />}
+                {marginComparison === 'exceeded' && <TrendingUp className="w-2.5 h-2.5" />}
+                <span>{marginComparison === 'below' ? 'En dessous' : marginComparison === 'reached' ? 'Atteinte' : 'Dépassée'}</span>
+              </span>
             </div>
           </div>
 
@@ -382,25 +491,37 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-bold text-[#252A27] uppercase tracking-wide">
-                Ingrédients &amp; Dosages par Portion
+                Ingrédients, Sous-recettes &amp; Dosages par Portion
               </label>
-              <button
-                type="button" onClick={handleAddIngredient}
-                className="flex items-center space-x-1 text-xs font-bold text-[#252A27] hover:underline"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Ajouter ingrédient</span>
-              </button>
+              <div className="flex items-center space-x-3">
+                <button
+                  type="button" onClick={handleAddIngredient}
+                  className="flex items-center space-x-1 text-xs font-bold text-[#252A27] hover:underline"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Ingrédient</span>
+                </button>
+                <button
+                  type="button" onClick={handleAddSubRecipe}
+                  disabled={availableSubRecipes.length === 0}
+                  title={availableSubRecipes.length === 0 ? "Aucune autre fiche technique disponible à utiliser comme sous-recette" : undefined}
+                  className="flex items-center space-x-1 text-xs font-bold text-[#252A27] hover:underline disabled:opacity-40 disabled:hover:no-underline disabled:cursor-not-allowed"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Sous-recette</span>
+                </button>
+              </div>
             </div>
 
             <div className="border border-[#D9DDD8] rounded-xl overflow-hidden divide-y divide-[#ECEEEA] bg-white">
               {rows.length === 0 ? (
                 <div className="p-5 text-center text-xs text-[#555D58]">
-                  Aucun ingrédient configuré. Cliquez sur "Ajouter ingrédient" pour lier les matières premières.
+                  Aucun ingrédient configuré. Cliquez sur "Ingrédient" ou "Sous-recette" pour composer la fiche.
                 </div>
               ) : (
                 rows.map((row, idx) => {
-                  const selectedIng = ingredientsCatalog.find(i => i.id === row.ingredientId);
+                  const isSubRecipe = row.type === 'subrecipe';
+                  const selectedIng = !isSubRecipe ? ingredientsCatalog.find(i => i.id === row.ingredientId) : undefined;
                   const compatibleUnits = getCompatibleRecipeUnits(row.stockUnit);
                   const displayStr = formatApproxQuantity(row.quantityMin, row.quantityMax, row.recipeUnit);
                   const isRange = row.quantityMax !== undefined && row.quantityMax !== row.quantityMin;
@@ -416,23 +537,47 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
 
                   return (
                     <div key={idx} className="p-2.5 space-y-2">
-                      {/* Row 1: ingredient selector + remove */}
+                      {/* Row 1: ingredient/sub-recipe selector + remove */}
                       <div className="flex items-center space-x-2">
-                        <ItemThumbnail
-                          src={selectedIng?.imageUrl} alt={row.ingredientName}
-                          category={selectedIng?.category} type="ingredient" size="sm" rounded="lg"
-                        />
-                        <select
-                          value={row.ingredientId}
-                          onChange={e => handleChangeIngredient(idx, e.target.value)}
-                          className="flex-1 p-1.5 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
-                        >
-                          {ingredientsCatalog.map(ing => (
-                            <option key={ing.id} value={ing.id}>
-                              {ing.name} ({ing.costPerUnit.toFixed(3)} DT / {ing.unit})
-                            </option>
-                          ))}
-                        </select>
+                        {isSubRecipe ? (
+                          <div className="w-8 h-8 rounded-lg bg-[#F2F3F0] border border-[#D9DDD8] flex items-center justify-center shrink-0" title="Sous-recette">
+                            <Layers className="w-3.5 h-3.5 text-[#555D58]" />
+                          </div>
+                        ) : (
+                          <ItemThumbnail
+                            src={selectedIng?.imageUrl} alt={row.ingredientName}
+                            category={selectedIng?.category} type="ingredient" size="sm" rounded="lg"
+                          />
+                        )}
+                        {isSubRecipe ? (
+                          <select
+                            value={row.ingredientId}
+                            onChange={e => handleChangeSubRecipe(idx, e.target.value)}
+                            className="flex-1 p-1.5 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
+                          >
+                            {/* Toujours inclure la valeur courante même si elle a été retirée de la liste disponible (édition) */}
+                            {!availableSubRecipes.some(r => r.productId === row.ingredientId) && (
+                              <option value={row.ingredientId}>{row.ingredientName} ({row.unitCost.toFixed(3)} DT / portion)</option>
+                            )}
+                            {availableSubRecipes.map(r => (
+                              <option key={r.productId} value={r.productId}>
+                                {r.productName} ({(r.portionYield > 0 ? r.totalIngredientsCost / r.portionYield : 0).toFixed(3)} DT / portion)
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <select
+                            value={row.ingredientId}
+                            onChange={e => handleChangeIngredient(idx, e.target.value)}
+                            className="flex-1 p-1.5 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27]"
+                          >
+                            {ingredientsCatalog.map(ing => (
+                              <option key={ing.id} value={ing.id}>
+                                {ing.name} ({ing.costPerUnit.toFixed(3)} DT / {ing.unit})
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         <button
                           type="button" onClick={() => handleRemove(idx)}
                           className="p-1 text-[#555D58] hover:text-rose-700 rounded-lg flex-shrink-0"
@@ -474,17 +619,23 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
                           <span className="text-[9px] text-[#888] mt-0.5">max (opt.)</span>
                         </div>
 
-                        {/* Unité recette */}
-                        <select
-                          value={row.recipeUnit}
-                          onChange={e => handleChangeRecipeUnit(idx, e.target.value)}
-                          className="p-1.5 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
-                          title="Unité d'affichage en recette (indépendante de l'unité stock)"
-                        >
-                          {compatibleUnits.map(u => (
-                            <option key={u} value={u}>{u}</option>
-                          ))}
-                        </select>
+                        {/* Unité recette (fixée à "portion" pour une sous-recette, pas de conversion) */}
+                        {isSubRecipe ? (
+                          <span className="p-1.5 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]">
+                            portion(s)
+                          </span>
+                        ) : (
+                          <select
+                            value={row.recipeUnit}
+                            onChange={e => handleChangeRecipeUnit(idx, e.target.value)}
+                            className="p-1.5 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
+                            title="Unité d'affichage en recette (indépendante de l'unité stock)"
+                          >
+                            {compatibleUnits.map(u => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        )}
 
                         {/* Affichage ≈ résultant + coût */}
                         <div className="flex-1 flex items-center justify-between">
@@ -497,8 +648,14 @@ export const TechnicalRecipeModal: React.FC<TechnicalRecipeModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Info stock conversion si unité différente */}
-                      {row.recipeUnit !== row.stockUnit && (
+                      {/* Info conversion / provenance du coût */}
+                      {isSubRecipe ? (
+                        <div className="pl-8">
+                          <p className="text-[10px] text-[#7B8A7F] italic">
+                            Sous-recette : coût par portion recalculé automatiquement à partir de sa propre fiche technique
+                          </p>
+                        </div>
+                      ) : row.recipeUnit !== row.stockUnit && (
                         <div className="pl-8">
                           <p className="text-[10px] text-[#7B8A7F] italic">
                             Stock en <strong>{row.stockUnit}</strong> — calcul interne en {row.stockUnit} · affiché toujours en {row.recipeUnit}
