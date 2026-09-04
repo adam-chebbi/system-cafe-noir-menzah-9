@@ -157,7 +157,7 @@ export interface RecipeIngredient {
 export interface TechnicalRecipe {
   id: string;
   productId: string;
-  productName: string;
+  productName?: string;
   portionYield: number;
   preparationTimeMinutes: number;
   ingredients: RecipeIngredient[];
@@ -213,7 +213,7 @@ export interface OrderItem {
   id: string;
   productId: string;
   productName: string;
-  unitPrice: number;
+  unitPrice?: number;
   quantity: number;
   options: OrderItemOption[];
   notes?: string;
@@ -256,11 +256,13 @@ export type PaymentMethod = 'especes' | 'tpe' | 'ticket_restaurant' | 'cash' | '
 export type ConsumptionType = 'sur_place' | 'a_emporter';
 
 export interface SaleItem {
+  /** Legacy imported rows may use this alias; new sales use productName. */
+  name?: string;
   productId?: string;
-  productName: string;
+  productName?: string;
   variant?: string;
   quantity: number;
-  unitPrice: number;
+  unitPrice?: number;
   tvaRate?: number;
   total: number;
 }
@@ -304,8 +306,8 @@ export interface Sale {
   discount: number;
   totalAmount: number;
   paymentMethod: PaymentMethod;
-  consumptionType: ConsumptionType;
-  ticketCount: number;
+  consumptionType?: ConsumptionType;
+  ticketCount?: number;
   splitDetails?: { method: string; amount: number }[];
   amountReceived?: number;
   changeGiven?: number;

@@ -1,5 +1,5 @@
 import { db } from '../db/database.js';
-import { Sale, CashRegisterSession, CashMovement, ClosingRegisterPayload, StockMovement, Expense, StockZone } from '../types/index.js';
+import { Sale, SaleItem, PaymentMethod, ConsumptionType, CashRegisterSession, CashMovement, ClosingRegisterPayload, StockMovement, Expense, StockZone } from '../types/index.js';
 import { ExpenseService } from './expenseService.js';
 
 export class SalesService {
@@ -761,4 +761,3 @@ export class SalesService {
     return session;
   }
 }
-
