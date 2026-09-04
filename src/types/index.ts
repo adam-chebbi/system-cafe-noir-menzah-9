@@ -11,6 +11,53 @@ export interface User {
   createdAt: string;
 }
 
+/** Employee HR record. Never a login account — this application has a single administrator identity (see User). */
+export interface EmployeeRecord {
+  id: string;
+  name: string;
+  phone: string;
+  position: string;
+  entryDate: string; // YYYY-MM-DD
+  active: boolean;
+  photoUrl?: string;
+  baseSalary: number;
+  cinNumber: string;
+  cinIssueDate: string; // YYYY-MM-DD
+  cinCopyUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'leave' | 'rest' | 'late';
+
+/** One manually-entered planning & presence record per employee per day. Attendance is 100% manual: no clock, no biometrics. */
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+  plannedStartTime?: string; // HH:mm
+  plannedEndTime?: string; // HH:mm
+  notes?: string;
+}
+
+export interface PersonnelFinancialRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string; // YYYY-MM-DD
+  baseSalary: number;
+  advances: number;
+  bonuses: number;
+  deductions: number;
+  amountPaid: number;
+  paymentDate?: string; // YYYY-MM-DD
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Space {
   id: string;
   name: string;
@@ -670,74 +717,6 @@ export interface Expense {
   documentDate?: string;
   attachmentUrl?: string;
   retroNotes?: string;
-}
-
-export interface Shift {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  role: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  breakMinutes: number;
-  status: 'scheduled' | 'in_progress' | 'completed' | 'absent';
-  notes?: string;
-}
-
-export interface AttendanceRecord {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  date: string;
-  clockInTime: string;
-  clockOutTime?: string;
-  breakMinutes: number;
-  totalHoursWorked: number;
-  status: 'active' | 'completed' | 'modified';
-  notes?: string;
-}
-
-export interface LeaveRequest {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  type: 'paid_leave' | 'sick' | 'unpaid' | 'special';
-  startDate: string;
-  endDate: string;
-  daysCount: number;
-  status: 'pending' | 'approved' | 'rejected';
-  reason?: string;
-  reviewedBy?: string;
-  createdAt: string;
-}
-
-export interface PayrollRecord {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  role: string;
-  periodMonth: string;
-  baseHourlyRate: number;
-  regularHours: number;
-  overtimeHours: number;
-  overtimeRate: number;
-  grossSalary: number;
-  bonuses: number;
-  advancesDeductions: number;
-  taxDeductions: number;
-  socialContributions: number;
-  netSalary: number;
-  paymentStatus: 'pending' | 'paid' | 'cancelled';
-  paymentDate?: string;
-  createdAt: string;
-  // Retroactive / historical document fields
-  isRetroactive?: boolean;
-  documentDate?: string;
-  attachmentUrl?: string;
-  retroNotes?: string;
-  cancelled?: boolean;
-  cancelReason?: string;
 }
 
 export interface SystemAlert {

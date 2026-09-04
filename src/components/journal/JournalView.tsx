@@ -124,7 +124,7 @@ export const JournalView: React.FC = () => {
               { id: 'stock', label: 'Stock & Pertes' },
               { id: 'finance', label: 'Caisse & Ventes' },
               { id: 'suppliers', label: 'Fournisseurs' },
-              { id: 'hr', label: 'RH & Pointage' }
+              { id: 'hr', label: 'RH & Présence' }
             ].map(c => (
               <button
                 key={c.id}

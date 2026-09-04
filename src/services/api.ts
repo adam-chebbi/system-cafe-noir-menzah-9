@@ -1,9 +1,9 @@
 import {
   User, Space, Table, Reservation, PlanElement, TableHistoryItem, Category, Ingredient, TechnicalRecipe,
   Product, Order, Sale, StockMovement, StockWaste, InventoryAudit, StockLot, StockZone,
-  Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, IngredientPurchaseHistoryEntry, ProductLabelMapping, Expense, ExpenseCategory, Shift, AttendanceRecord,
-  LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession, CashMovement,
-  TheoreticalConsumptionReport, IngredientTheoreticalStock
+  Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, IngredientPurchaseHistoryEntry, ProductLabelMapping, Expense, ExpenseCategory,
+  SystemAlert, JournalEntry, CashRegisterSession, CashMovement,
+  TheoreticalConsumptionReport, IngredientTheoreticalStock, EmployeeRecord, AttendanceRecord, AttendanceStatus, PersonnelFinancialRecord
 } from '../types/index';
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -28,23 +28,62 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // HR V1 — employee records, manually-entered planning/presence and financial tracking.
+  getEmployees: () => fetchJson<EmployeeRecord[]>('/api/hr/employees'),
+  createEmployee: (data: Partial<EmployeeRecord>, performedBy: string) => fetchJson<EmployeeRecord>('/api/hr/employees', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updateEmployee: (id: string, updates: Partial<EmployeeRecord>, performedBy: string) => fetchJson<EmployeeRecord>(`/api/hr/employees/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  setEmployeeActive: (id: string, performedBy: string) => fetchJson<EmployeeRecord>(`/api/hr/employees/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getAttendances: (filter?: { start?: string; end?: string; employeeId?: string }) => {
+    const query = new URLSearchParams();
+    if (filter?.start) query.set('start', filter.start);
+    if (filter?.end) query.set('end', filter.end);
+    if (filter?.employeeId) query.set('employeeId', filter.employeeId);
+    const qs = query.toString();
+    return fetchJson<AttendanceRecord[]>(`/api/hr/presence${qs ? `?${qs}` : ''}`);
+  },
+  saveAttendance: (data: {
+    employeeId: string;
+    employeeName: string;
+    date: string;
+    status: AttendanceStatus;
+    plannedStartTime?: string;
+    plannedEndTime?: string;
+    notes?: string;
+  }, performedBy: string) => fetchJson<AttendanceRecord>('/api/hr/presence', {
+    method: 'PUT',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  deleteAttendance: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/hr/presence/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getPersonnelFinancialRecords: (employeeId?: string) => fetchJson<PersonnelFinancialRecord[]>(`/api/hr/financial-records${employeeId ? `?employeeId=${employeeId}` : ''}`),
+  createPersonnelFinancialRecord: (data: Partial<PersonnelFinancialRecord>, performedBy: string) => fetchJson<PersonnelFinancialRecord>('/api/hr/financial-records', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  updatePersonnelFinancialRecord: (id: string, updates: Partial<PersonnelFinancialRecord>, performedBy: string) => fetchJson<PersonnelFinancialRecord>(`/api/hr/financial-records/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deletePersonnelFinancialRecord: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/hr/financial-records/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+
   // Auth
   loginPin: (pin: string) => fetchJson<{ success: boolean; user: User }>('/api/auth/login-pin', {
     method: 'POST',
     body: JSON.stringify({ pin })
   }),
   getUsers: () => fetchJson<User[]>('/api/users'),
-  createUser: (data: Partial<User>, performedBy: string) => fetchJson<User>('/api/users', {
-    method: 'POST',
-    body: JSON.stringify({ ...data, performedBy })
-  }),
-  updateUser: (id: string, updates: Partial<User>, performedBy: string) => fetchJson<User>(`/api/users/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ...updates, performedBy })
-  }),
-  deleteUser: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/users/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
-    method: 'DELETE'
-  }),
+
 
   // Metrics & Dashboard Analytics
   getDashboardMetrics: () => fetchJson<any>('/api/dashboard/metrics'),
@@ -443,62 +482,6 @@ export const api = {
   }),
   getIngredientPurchaseHistory: (ingredientId: string) => fetchJson<IngredientPurchaseHistoryEntry[]>(`/api/ingredients/${ingredientId}/purchase-history`),
 
-  // HR
-  getShifts: (start?: string, end?: string) => {
-    const q = start && end ? `?start=${start}&end=${end}` : '';
-    return fetchJson<Shift[]>(`/api/hr/shifts${q}`);
-  },
-  createShift: (data: Partial<Shift>, performedBy: string) => fetchJson<Shift>('/api/hr/shifts', {
-    method: 'POST',
-    body: JSON.stringify({ ...data, performedBy })
-  }),
-  updateShift: (id: string, updates: Partial<Shift>, performedBy: string) => fetchJson<Shift>(`/api/hr/shifts/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ...updates, performedBy })
-  }),
-  deleteShift: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/hr/shifts/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
-    method: 'DELETE'
-  }),
-  getAttendances: (date?: string) => fetchJson<AttendanceRecord[]>(`/api/hr/attendances${date ? `?date=${date}` : ''}`),
-  clockIn: (employeeId: string, performedBy: string) => fetchJson<AttendanceRecord>('/api/hr/attendance/clock-in', {
-    method: 'POST',
-    body: JSON.stringify({ employeeId, performedBy })
-  }),
-  clockOut: (employeeId: string, breakMinutes: number, notes?: string, performedBy?: string) => fetchJson<AttendanceRecord>('/api/hr/attendance/clock-out', {
-    method: 'POST',
-    body: JSON.stringify({ employeeId, breakMinutes, notes, performedBy })
-  }),
-  getLeaves: () => fetchJson<LeaveRequest[]>('/api/hr/leaves'),
-  createLeave: (data: Partial<LeaveRequest>, performedBy: string) => fetchJson<LeaveRequest>('/api/hr/leaves', {
-    method: 'POST',
-    body: JSON.stringify({ ...data, performedBy })
-  }),
-  updateLeaveStatus: (id: string, status: string, reviewedBy: string) => fetchJson<LeaveRequest>(`/api/hr/leaves/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status, reviewedBy })
-  }),
-  deleteLeave: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/hr/leaves/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
-    method: 'DELETE'
-  }),
-  getPayrolls: () => fetchJson<PayrollRecord[]>('/api/hr/payrolls'),
-  generatePayroll: (employeeId: string, periodMonth: string, bonuses = 0, deductions = 0, performedBy: string) => fetchJson<PayrollRecord>('/api/hr/payrolls/generate', {
-    method: 'POST',
-    body: JSON.stringify({ employeeId, periodMonth, bonuses, deductions, performedBy })
-  }),
-  createManualPayroll: (data: Partial<PayrollRecord>, performedBy: string) => fetchJson<PayrollRecord>('/api/hr/payrolls/manual', {
-    method: 'POST',
-    body: JSON.stringify({ ...data, performedBy })
-  }),
-  updatePayroll: (id: string, updates: Partial<PayrollRecord>, performedBy: string) => fetchJson<PayrollRecord>(`/api/hr/payrolls/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ...updates, performedBy })
-  }),
-  cancelPayroll: (id: string, reason: string, performedBy: string) => fetchJson<PayrollRecord>(`/api/hr/payrolls/${id}/cancel`, {
-    method: 'POST',
-    body: JSON.stringify({ reason, performedBy })
-  }),
-  getStaffPerformance: () => fetchJson<any[]>('/api/hr/performance'),
-
   // Expenses
   getExpenses: () => fetchJson<Expense[]>('/api/expenses'),
   createExpense: (data: Partial<Expense>, performedBy: string) => fetchJson<Expense>('/api/expenses', {
@@ -533,21 +516,6 @@ export const api = {
   getJournal: () => fetchJson<JournalEntry[]>('/api/journal'),
   getJournalLogs: () => fetchJson<JournalEntry[]>('/api/journal'),
 
-  // Convenience Aliases for UI Components
-  getEmployees: () => fetchJson<User[]>('/api/users'),
-  createEmployee: (data: Partial<User>, performedBy = 'Admin') => fetchJson<User>('/api/users', {
-    method: 'POST',
-    body: JSON.stringify({ ...data, performedBy })
-  }),
-  updateEmployee: (id: string, updates: Partial<User>, performedBy = 'Admin') => fetchJson<User>(`/api/users/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ...updates, performedBy })
-  }),
-  deleteEmployee: (id: string, performedBy = 'Admin') => fetchJson<{ success: boolean }>(`/api/users/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
-    method: 'DELETE'
-  }),
-  getAttendance: (date?: string) => fetchJson<AttendanceRecord[]>(`/api/hr/attendances${date ? `?date=${date}` : ''}`),
-  getPayroll: () => fetchJson<PayrollRecord[]>('/api/hr/payrolls'),
   getOrder: (id: string) => fetchJson<Order>(`/api/orders/${id}`),
   createOrder: (data: any) => fetchJson<Order>('/api/orders/qr', {
     method: 'POST',

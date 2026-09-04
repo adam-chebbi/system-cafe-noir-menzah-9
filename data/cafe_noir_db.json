@@ -5,477 +5,70 @@
       "name": "Adam Mansour",
       "email": "adam@café-noir.fr",
       "role": "admin",
-      "pin": "1234",
+      "pin": "",
       "phone": "+33 6 12 34 56 78",
       "hourlyRate": 28.5,
       "active": true,
       "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
       "createdAt": "2025-01-01T08:00:00Z"
-    },
+    }
+  ],
+  "employees": [
     {
-      "id": "usr_victor",
-      "name": "Victor Noir",
-      "email": "victor@café-noir.fr",
-      "role": "admin",
-      "pin": "0000",
-      "phone": "+33 6 11 22 33 44",
-      "hourlyRate": 30,
-      "active": true,
-      "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-      "createdAt": "2025-01-01T08:00:00Z"
-    },
-    {
-      "id": "usr_manager",
-      "name": "Camille Laurent",
-      "email": "camille@café-noir.fr",
-      "role": "manager",
-      "pin": "2025",
-      "phone": "+33 6 98 76 54 32",
-      "hourlyRate": 22,
-      "active": true,
-      "avatar": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
-      "createdAt": "2025-01-05T08:00:00Z"
-    },
-    {
-      "id": "usr_sarah",
-      "name": "Sarah Alami",
-      "email": "sarah@café-noir.fr",
-      "role": "barista",
-      "pin": "5678",
-      "phone": "+33 6 55 44 33 22",
-      "hourlyRate": 18,
-      "active": true,
-      "avatar": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80",
-      "createdAt": "2025-01-10T08:00:00Z"
-    },
-    {
-      "id": "usr_julien",
-      "name": "Julien Moreau",
-      "email": "julien@café-noir.fr",
-      "role": "cook",
-      "pin": "4321",
-      "phone": "+33 6 77 88 99 00",
-      "hourlyRate": 19.5,
-      "active": true,
-      "avatar": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80",
-      "createdAt": "2025-01-15T08:00:00Z"
-    },
-    {
-      "id": "usr_barista",
+      "id": "emp_1",
       "name": "Lucas Morel",
-      "email": "lucas@café-noir.fr",
-      "role": "barista",
-      "pin": "1111",
-      "phone": "+33 6 45 67 89 01",
-      "hourlyRate": 16.5,
+      "phone": "+216 20 123 456",
+      "position": "Barista Principal",
+      "entryDate": "2024-03-01",
       "active": true,
-      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      "createdAt": "2025-02-01T08:00:00Z"
+      "baseSalary": 950,
+      "cinNumber": "08123456",
+      "cinIssueDate": "2016-05-12",
+      "createdAt": "2026-09-04T13:31:20.588Z",
+      "updatedAt": "2026-09-04T13:31:20.588Z"
     },
     {
-      "id": "usr_server",
+      "id": "emp_2",
       "name": "Sophie Dubois",
-      "email": "sophie@café-noir.fr",
-      "role": "server",
-      "pin": "2222",
-      "phone": "+33 6 33 22 11 00",
-      "hourlyRate": 15.5,
+      "phone": "+216 22 987 654",
+      "position": "Service Salle & Terrasse",
+      "entryDate": "2024-06-15",
       "active": true,
-      "avatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-      "createdAt": "2025-02-10T08:00:00Z"
+      "baseSalary": 820,
+      "cinNumber": "09456789",
+      "cinIssueDate": "2018-02-20",
+      "createdAt": "2026-09-04T13:31:20.588Z",
+      "updatedAt": "2026-09-04T13:31:20.588Z"
     }
   ],
-  "spaces": [
+  "personnelFinancialRecords": [
     {
-      "id": "sp_salle",
-      "name": "Salle Principale",
-      "description": "Ambiance chaleureuse bois & laiton",
-      "color": "#2B422F",
-      "order": 1
+      "id": "fin_1",
+      "employeeId": "emp_1",
+      "employeeName": "Lucas Morel",
+      "date": "2026-08-05",
+      "baseSalary": 950,
+      "advances": 0,
+      "bonuses": 50,
+      "deductions": 0,
+      "amountPaid": 1000,
+      "paymentDate": "2026-08-05",
+      "createdAt": "2026-09-04T13:31:20.588Z",
+      "updatedAt": "2026-09-04T13:31:20.588Z"
     },
     {
-      "id": "sp_terrasse",
-      "name": "Terrasse Extérieure",
-      "description": "Vue sur place arborée, chauffée",
-      "color": "#C5A059",
-      "order": 2
-    },
-    {
-      "id": "sp_lounge",
-      "name": "Lounge & Bar",
-      "description": "Fauteuils club & comptoir signature",
-      "color": "#7E6347",
-      "order": 3
-    },
-    {
-      "id": "sp_mezzanine",
-      "name": "Mezzanine Calme",
-      "description": "Espace coworking & lecture",
-      "color": "#4A5B4D",
-      "order": 4
-    }
-  ],
-  "tables": [
-    {
-      "id": "tbl_1",
-      "number": "1",
-      "name": "Table 1",
-      "spaceId": "sp_salle",
-      "capacity": 2,
-      "status": "available",
-      "posX": 100,
-      "posY": 80,
-      "shape": "circle",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_2",
-      "number": "2",
-      "name": "Table 2",
-      "spaceId": "sp_salle",
-      "capacity": 2,
-      "status": "available",
-      "posX": 220,
-      "posY": 80,
-      "shape": "circle",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_3",
-      "number": "3",
-      "name": "Table 3",
-      "spaceId": "sp_salle",
-      "capacity": 4,
-      "status": "occupied",
-      "posX": 100,
-      "posY": 200,
-      "shape": "square",
-      "qrCodeUrl": "data:image/png;base64,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",
-      "currentOrderId": "ord_1000"
-    },
-    {
-      "id": "tbl_4",
-      "number": "4",
-      "name": "Table 4",
-      "spaceId": "sp_salle",
-      "capacity": 4,
-      "status": "available",
-      "posX": 220,
-      "posY": 200,
-      "shape": "square",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_5",
-      "number": "5",
-      "name": "Grande Table 5",
-      "spaceId": "sp_salle",
-      "capacity": 6,
-      "status": "occupied",
-      "posX": 360,
-      "posY": 140,
-      "shape": "rectangle",
-      "qrCodeUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYAAAB5fY51AAAAAklEQVR4AewaftIAAAeFSURBVO3BwY0dOxJFwaPE84O5oP8WcUFaopEDEghM6Vff1on48fMXJClAIUkhCkkKUUhSiEKSQhSSFKKQpBCFJIUoJClEIUkhCkkKUUhSiEKSQhSSFKKQpBCFJIUoJClEIUkhCkkKUUhSiEKSQnz4C8Zs9Gdnbd4yZnPjrM1bxmxunLV5y5iN/uyszZMKSQpRSFKIQpJCFJIUopCkEIUkhSgkKUQhSSEKSQpRSFKIDy87a/NdjNk8bczmaWdtbozZvOWszXdy1ua7GLN5SyFJIQpJClFIUohCkkIUkhSikKQQhSSFKCQpRCFJIT6EGLN5y1mbt5y1uTFm87SzNjfGbG6dtXnSmM2tszZf3ZjNW87afHWFJIUoJClEIUkhCkkKUUhSiEKSQhSSFKKQpBCFJIX4oH/OmM2NszY3ztrcGrO5cdbmxlkb/TsKSQpRSFKIQpJCFJIUopCkEIUkhSgkKUQhSSEKSQpRSFKID/rSxmxunLW5NWbzpDGbBGM2N87a6GsqJClEIUkhCkkKUUhSiEKSQhSSFKKQpBCFJIUoJCnEhxBnbf5FZ21ujNncOmtzY8zmxlmbp43Z/IvO2uj3CkkKUUhSiEKSQhSSFKKQpBCFJIUoJClEIUkhCkkK8eFlYzb6vTGbG2dtbo3Z3Dhrc2PM5tZZmyedtbk1ZvOWMRv9/wpJClFIUohCkkIUkhSikKQQhSSFKCQpRCFJIQpJClFIUogPf8FZGz3jrM2NMZvv5KzNjTGbt5y10X+rkKQQhSSFKCQpRCFJIQpJClFIUohCkkIUkhSikKQQP37+wsPGbG6dtbkxZnPjrM2tMZsbZ21ujNncOmvzljGbG2dt9N8as7lx1uZpYzY3ztq8pZCkEIUkhSgkKUQhSSEKSQpRSFKIQpJCFJIUopCkED9+/sKLxmxunLW5MWZz66zNjTGbG2dt3jJm852ctXnLmM3Tzto8aczm1lmbJ43Z3Dpr86RCkkIUkhSikKQQhSSFKCQpRCFJIQpJClFIUohCkkIUkhTiQ4gxm69uzCbBWZsnjdncOmtzY8zmxlmb72TM5mljNt9FIUkhCkkKUUhSiEKSQhSSFKKQpBCFJIUoJClEIUkhPugxZ20SjNm8ZczmLWM2N87afHVnbd4yZvOWQpJCFJIUopCkEIUkhSgkKUQhSSEKSQpRSFKIQpJCfPgLxmxunbX5LsZsbp21uTFm85azNm8Zs7kxZnPrrM2TxmxunbW5cdbmxpjNrbM230UhSSEKSQpRSFKIQpJCFJIUopCkEIUkhSgkKUQhSSEKSQrx4S84a/OdnLV52pjNW87a3BizuXHWJsGYjX5vzOarKyQpRCFJIQpJClFIUohCkkIUkhSikKQQhSSFKCQpxI+fv/CwMZtbZ21ujNk87azNjTGbt5y1+U7GbG6ctXnamM2Tztr8i8Zsbp21eVIhSSEKSQpRSFKIQpJCFJIUopCkEIUkhSgkKUQhSSE+/AVnbW6N2dw4a/O0MZsbZ22eNmZzY8zmxlmbW2M2Tzprc+uszZPGbJ521uZpYzY3ztrcGLO5ddbmuygkKUQhSSEKSQpRSFKIQpJCFJIUopCkEIUkhSgkKUQhSSE+/AVjNrfO2twYs3nLmM1bztq85azNjTGbW2dtvroxm7eM2dw4a/O0MZsbZ23eUkhSiEKSQhSSFKKQpBCFJIUoJClEIUkhCkkKUUhSiB8/f0Ff1pjNjbM2t8ZsvrqzNjfGbJ521uYtYzY3ztrcGrN5y1mbJxWSFKKQpBCFJIUoJClEIUkhCkkKUUhSiEKSQhSSFOLDXzBmoz87a3PjrM2NMZsEZ21ujNl8dWM2t87aPGnM5mlnbW6M2bylkKQQhSSFKCQpRCFJIQpJClFIUohCkkIUkhSikKQQhSSF+PCyszbfxZjNW87avGXM5taYzZPO2twas3nSWZu3nLV52pjNjbM2bykkKUQhSSEKSQpRSFKIQpJCFJIUopCkEIUkhSgkKcSHEGM2bzlr85YxmxtnbZ42ZnPjrM3TxmzeMmbz1Y3Z3Dprc+OszY0xm1tnbZ5USFKIQpJCFJIUopCkEIUkhSgkKUQhSSEKSQpRSFKID/rSzto8bczmuxizedpZm6eN2TzprM1bztq8pZCkEIUkhSgkKUQhSSEKSQpRSFKIQpJCFJIUopCkEIUkhfigL23M5mlnbd4yZnPjrM3TxmxujNncOGuTYMzmxlmbG2M2t87aPKmQpBCFJIUoJClEIUkhCkkKUUhSiEKSQhSSFKKQpBA/fv7Cw8Zsbp21+S7GbG6dtXnSmM1bztq8ZczmaWdt/kVjNjfO2rylkKQQhSSFKCQpRCFJIQpJClFIUohCkkIUkhSikKQQH142ZqPfG7O5cdbm1pjNjbM2N8Zsbp21+S7GbG6dtbkxZnPjrM1bxmxunbV5UiFJIQpJClFIUohCkkIUkhSikKQQhSSFKCQpRCFJIQpJCvHj5y9IUoBCkkIUkhSikKQQhSSFKCQpRCFJIQpJClFIUohCkkIUkhSikKQQhSSFKCQpRCFJIQpJClFIUohCkkIUkhSikKQQ/wOjTpyWz0JDaQAAAABJRU5ErkJggg==",
-      "performedBy": "Victor Noir"
-    },
-    {
-      "id": "tbl_7",
-      "number": "7",
-      "name": "Table 7 (Terrasse)",
-      "spaceId": "sp_terrasse",
-      "capacity": 2,
-      "status": "available",
-      "posX": 100,
-      "posY": 90,
-      "shape": "circle",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_8",
-      "number": "8",
-      "name": "Table 8 (Terrasse)",
-      "spaceId": "sp_terrasse",
-      "capacity": 4,
-      "status": "available",
-      "posX": 220,
-      "posY": 90,
-      "shape": "square",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_9",
-      "number": "9",
-      "name": "Table 9 (Terrasse)",
-      "spaceId": "sp_terrasse",
-      "capacity": 4,
-      "status": "available",
-      "posX": 340,
-      "posY": 90,
-      "shape": "square",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_12",
-      "number": "12",
-      "name": "Club Lounge A",
-      "spaceId": "sp_lounge",
-      "capacity": 4,
-      "status": "available",
-      "posX": 120,
-      "posY": 100,
-      "shape": "square",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_14",
-      "number": "14",
-      "name": "Comptoir Bar 1",
-      "spaceId": "sp_lounge",
-      "capacity": 2,
-      "status": "available",
-      "posX": 280,
-      "posY": 100,
-      "shape": "circle",
-      "qrCodeUrl": "data:image/png;base64,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"
-    },
-    {
-      "id": "tbl_15",
-      "number": "15",
-      "name": "Mezzanine 1",
-      "spaceId": "sp_mezzanine",
-      "capacity": 4,
-      "status": "available",
-      "posX": 150,
-      "posY": 120,
-      "shape": "rectangle",
-      "qrCodeUrl": "data:image/png;base64,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"
-    }
-  ],
-  "planElements": [
-    {
-      "id": "pe_bar_main",
-      "spaceId": "sp_salle",
-      "type": "counter",
-      "label": "Comptoir Bar Espresso",
-      "posX": 30,
-      "posY": 30,
-      "width": 220,
-      "height": 42,
-      "rotation": 0,
-      "color": "#4A3319"
-    },
-    {
-      "id": "pe_bar_station",
-      "spaceId": "sp_salle",
-      "type": "bar_station",
-      "label": "Machine La Marzocco & Moulin",
-      "posX": 260,
-      "posY": 30,
-      "width": 100,
-      "height": 42,
-      "rotation": 0,
-      "color": "#C5A059"
-    },
-    {
-      "id": "pe_door_salle",
-      "spaceId": "sp_salle",
-      "type": "door",
-      "label": "Entrée Principale",
-      "posX": 380,
-      "posY": 450,
-      "width": 75,
-      "height": 20,
-      "rotation": 0,
-      "color": "#2B422F"
-    },
-    {
-      "id": "pe_wall_divider",
-      "spaceId": "sp_salle",
-      "type": "wall",
-      "label": "Séparation Acoustique",
-      "posX": 310,
-      "posY": 100,
-      "width": 10,
-      "height": 160,
-      "rotation": 0,
-      "color": "#1E231F"
-    },
-    {
-      "id": "pe_plant_1",
-      "spaceId": "sp_salle",
-      "type": "plant",
-      "label": "Monstera Deliciosa",
-      "posX": 460,
-      "posY": 35,
-      "width": 36,
-      "height": 36,
-      "rotation": 0,
-      "color": "#4A5B4D"
-    },
-    {
-      "id": "pe_window_rue",
-      "spaceId": "sp_salle",
-      "type": "window",
-      "label": "Baie Vitrée Rue",
-      "posX": 20,
-      "posY": 460,
-      "width": 260,
-      "height": 14,
-      "rotation": 0,
-      "color": "#7E6347"
-    },
-    {
-      "id": "pe_sofa_salle",
-      "spaceId": "sp_salle",
-      "type": "sofa",
-      "label": "Banquette Cuir Caramel",
-      "posX": 340,
-      "posY": 360,
-      "width": 150,
-      "height": 48,
-      "rotation": 0,
-      "color": "#C5A059"
-    },
-    {
-      "id": "pe_terrasse_awning",
-      "spaceId": "sp_terrasse",
-      "type": "divider",
-      "label": "Store Banne & Chauffage",
-      "posX": 40,
-      "posY": 20,
-      "width": 380,
-      "height": 16,
-      "rotation": 0,
-      "color": "#C5A059"
-    },
-    {
-      "id": "pe_terrasse_plants",
-      "spaceId": "sp_terrasse",
-      "type": "plant",
-      "label": "Bacs Végétaux Lauriers",
-      "posX": 20,
-      "posY": 400,
-      "width": 280,
-      "height": 26,
-      "rotation": 0,
-      "color": "#2B422F"
-    },
-    {
-      "id": "pe_terrasse_access",
-      "spaceId": "sp_terrasse",
-      "type": "door",
-      "label": "Accès Salle",
-      "posX": 420,
-      "posY": 220,
-      "width": 60,
-      "height": 18,
-      "rotation": 90,
-      "color": "#7E6347"
-    },
-    {
-      "id": "pe_lounge_bar",
-      "spaceId": "sp_lounge",
-      "type": "counter",
-      "label": "Comptoir Signature & Vins",
-      "posX": 30,
-      "posY": 30,
-      "width": 240,
-      "height": 50,
-      "rotation": 0,
-      "color": "#7E6347"
-    },
-    {
-      "id": "pe_lounge_sofa1",
-      "spaceId": "sp_lounge",
-      "type": "sofa",
-      "label": "Fauteuils Club Cuir",
-      "posX": 40,
-      "posY": 280,
-      "width": 180,
-      "height": 55,
-      "rotation": 0,
-      "color": "#4A3319"
-    },
-    {
-      "id": "pe_lounge_plant",
-      "spaceId": "sp_lounge",
-      "type": "plant",
-      "label": "Ficus Lyrata",
-      "posX": 340,
-      "posY": 35,
-      "width": 40,
-      "height": 40,
-      "rotation": 0,
-      "color": "#2B422F"
-    },
-    {
-      "id": "pe_mezz_divider",
-      "spaceId": "sp_mezzanine",
-      "type": "divider",
-      "label": "Garde-corps Verre & Métal",
-      "posX": 30,
-      "posY": 420,
-      "width": 360,
-      "height": 14,
-      "rotation": 0,
-      "color": "#4A5B4D"
-    },
-    {
-      "id": "pe_mezz_library",
-      "spaceId": "sp_mezzanine",
-      "type": "wall",
-      "label": "Bibliothèque & Coworking",
-      "posX": 30,
-      "posY": 30,
-      "width": 240,
-      "height": 30,
-      "rotation": 0,
-      "color": "#7E6347"
-    }
-  ],
-  "reservations": [
-    {
-      "id": "res_1",
-      "customerName": "Alexandre Dumas",
-      "customerPhone": "+33 6 12 34 56 78",
-      "customerEmail": "a.dumas@email.com",
-      "tableId": "tbl_5",
-      "spaceId": "sp_salle",
-      "guestsCount": 6,
-      "reservationDate": "2026-09-01",
-      "reservationTime": "12:30",
-      "status": "seated",
-      "notes": "Déjeuner professionnel, besoin de calme et de prises.",
-      "createdAt": "2026-09-01T03:38:06.789Z",
-      "performedBy": "Victor Noir"
-    },
-    {
-      "id": "res_2",
-      "customerName": "Sophie Marceau",
-      "customerPhone": "+33 6 98 76 54 32",
-      "customerEmail": "sophie.m@cinema.fr",
-      "tableId": "tbl_12",
-      "spaceId": "sp_lounge",
-      "guestsCount": 4,
-      "reservationDate": "2026-09-01",
-      "reservationTime": "19:00",
-      "status": "confirmed",
-      "notes": "Table près des fauteuils club, dégustation café & cocktails.",
-      "createdAt": "2026-09-01T03:38:06.789Z"
-    },
-    {
-      "id": "res_3",
-      "customerName": "Jean Reno",
-      "customerPhone": "+33 6 55 44 33 22",
-      "customerEmail": "j.reno@pro.com",
-      "tableId": "tbl_8",
-      "spaceId": "sp_terrasse",
-      "guestsCount": 4,
-      "reservationDate": "2026-09-02",
-      "reservationTime": "13:00",
-      "status": "pending",
-      "notes": "Terrasse couverte si possible.",
-      "createdAt": "2026-09-01T03:38:06.789Z"
+      "id": "fin_2",
+      "employeeId": "emp_2",
+      "employeeName": "Sophie Dubois",
+      "date": "2026-08-05",
+      "baseSalary": 820,
+      "advances": 100,
+      "bonuses": 0,
+      "deductions": 0,
+      "amountPaid": 720,
+      "paymentDate": "2026-08-05",
+      "createdAt": "2026-09-04T13:31:20.588Z",
+      "updatedAt": "2026-09-04T13:31:20.588Z"
     }
   ],
   "categories": [
@@ -539,115 +132,193 @@
       "id": "ing_ethiopia_beans",
       "name": "Grains Éthiopie Yirgacheffe (Bio)",
       "unit": "kg",
-      "currentStock": 14.392,
+      "stockByZone": {
+        "reserve_principale": 9.5,
+        "depot": 5
+      },
+      "currentStock": 14.5,
       "minStockThreshold": 5,
+      "targetStock": 20,
       "costPerUnit": 24.5,
       "supplierId": "sup_terres_cafe",
       "category": "coffee",
-      "updatedAt": "2026-09-01T05:35:25.524Z"
+      "imageUrl": "https://images.unsplash.com/photo-1587734195503-904fca47e0e9?w=400&auto=format&fit=crop&q=80",
+      "trackLots": true,
+      "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_colombia_beans",
       "name": "Grains Colombie Supremo Huila",
       "unit": "kg",
+      "stockByZone": {
+        "reserve_principale": 10,
+        "depot": 8
+      },
       "currentStock": 18,
       "minStockThreshold": 6,
+      "targetStock": 24,
       "costPerUnit": 19.8,
       "supplierId": "sup_terres_cafe",
       "category": "coffee",
+      "imageUrl": "https://images.unsplash.com/photo-1559056199-641a0ac8b55e?w=400&auto=format&fit=crop&q=80",
+      "trackLots": true,
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_whole_milk",
       "name": "Lait Entier Bio Microfiltré",
       "unit": "L",
-      "currentStock": 34.36,
+      "stockByZone": {
+        "reserve_principale": 15,
+        "depot": 20
+      },
+      "currentStock": 35,
       "minStockThreshold": 15,
+      "targetStock": 40,
       "costPerUnit": 1.45,
       "supplierId": "sup_laiterie_normande",
       "category": "milk_dairy",
-      "updatedAt": "2026-09-01T05:35:25.524Z"
+      "imageUrl": "https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&auto=format&fit=crop&q=80",
+      "trackLots": true,
+      "expiryAlertLeadDays": 3,
+      "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_oat_milk",
       "name": "Boisson Avoine Oatly Barista",
       "unit": "L",
+      "stockByZone": {
+        "reserve_principale": 12,
+        "depot": 10
+      },
       "currentStock": 22,
       "minStockThreshold": 10,
+      "targetStock": 25,
       "costPerUnit": 2.1,
       "supplierId": "sup_laiterie_normande",
       "category": "milk_dairy",
+      "imageUrl": "https://images.unsplash.com/photo-1596797038530-2c107229654b?w=400&auto=format&fit=crop&q=80",
+      "trackLots": true,
+      "expiryAlertLeadDays": 7,
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_madagascar_vanilla",
       "name": "Sirop Vanille Bourbon Artisanale",
       "unit": "cl",
+      "stockByZone": {
+        "reserve_principale": 80,
+        "depot": 100
+      },
       "currentStock": 180,
       "minStockThreshold": 50,
+      "targetStock": 200,
       "costPerUnit": 0.12,
       "category": "syrup",
+      "imageUrl": "https://images.unsplash.com/photo-1598514982205-f36b96d1e8d4?w=400&auto=format&fit=crop&q=80",
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_caramel_salted",
       "name": "Caramel Beurre Salé Guérande",
       "unit": "g",
+      "stockByZone": {
+        "reserve_principale": 1500,
+        "depot": 1000
+      },
       "currentStock": 2500,
       "minStockThreshold": 800,
+      "targetStock": 3000,
       "costPerUnit": 0.018,
       "category": "syrup",
+      "imageUrl": "https://images.unsplash.com/photo-1589733955941-5eeaf752f6dd?w=400&auto=format&fit=crop&q=80",
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_matcha_uji",
       "name": "Matcha Cérémonial Uji Kyoto",
       "unit": "g",
+      "stockByZone": {
+        "reserve_principale": 250,
+        "depot": 200
+      },
       "currentStock": 450,
       "minStockThreshold": 150,
+      "targetStock": 500,
       "costPerUnit": 0.28,
       "category": "beverage",
+      "imageUrl": "https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=400&auto=format&fit=crop&q=80",
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_croissant_dough",
       "name": "Croissants Pur Beurre Surgelés AOP",
       "unit": "unit",
+      "stockByZone": {
+        "reserve_principale": 28,
+        "depot": 20
+      },
       "currentStock": 48,
       "minStockThreshold": 20,
+      "targetStock": 60,
       "costPerUnit": 0.65,
       "supplierId": "sup_moulins_viron",
       "category": "bakery",
+      "imageUrl": "https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400&auto=format&fit=crop&q=80",
+      "trackLots": true,
+      "expiryAlertLeadDays": 10,
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_cookie_chocolate",
       "name": "Pâte Cookie Chocolat Fleur de Sel",
       "unit": "unit",
+      "stockByZone": {
+        "reserve_principale": 20,
+        "depot": 16
+      },
       "currentStock": 36,
       "minStockThreshold": 15,
+      "targetStock": 40,
       "costPerUnit": 0.95,
       "category": "bakery",
+      "imageUrl": "https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=400&auto=format&fit=crop&q=80",
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_avocado_fresh",
       "name": "Avocats Hass Mûrs à Point",
       "unit": "unit",
+      "stockByZone": {
+        "reserve_principale": 12,
+        "depot": 0
+      },
       "currentStock": 12,
       "minStockThreshold": 10,
+      "targetStock": 20,
       "costPerUnit": 1.1,
       "category": "fresh",
+      "imageUrl": "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?w=400&auto=format&fit=crop&q=80",
+      "trackLots": true,
+      "expiryAlertLeadDays": 2,
       "updatedAt": "2025-08-30T10:00:00Z"
     },
     {
       "id": "ing_sourdough_bread",
       "name": "Pain de Campagne Levain Naturel",
       "unit": "unit",
+      "stockByZone": {
+        "reserve_principale": 8,
+        "depot": 0
+      },
       "currentStock": 8,
       "minStockThreshold": 4,
+      "targetStock": 12,
       "costPerUnit": 3.2,
       "category": "fresh",
+      "imageUrl": "https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?w=400&auto=format&fit=crop&q=80",
+      "trackLots": true,
+      "expiryAlertLeadDays": 1,
       "updatedAt": "2025-08-30T10:00:00Z"
     }
   ],
@@ -662,10 +333,13 @@
         {
           "ingredientId": "ing_ethiopia_beans",
           "ingredientName": "Grains Éthiopie Yirgacheffe (Bio)",
+          "quantityMin": 18,
+          "recipeUnit": "g",
           "quantity": 0.018,
           "unit": "kg",
           "unitCost": 24.5,
-          "totalCost": 0.441
+          "totalCost": 0.441,
+          "displayQuantity": "≈18 g"
         }
       ],
       "totalIngredientsCost": 0.44,
@@ -689,18 +363,25 @@
         {
           "ingredientId": "ing_ethiopia_beans",
           "ingredientName": "Grains Éthiopie Yirgacheffe (Bio)",
+          "quantityMin": 18,
+          "recipeUnit": "g",
           "quantity": 0.018,
           "unit": "kg",
           "unitCost": 24.5,
-          "totalCost": 0.441
+          "totalCost": 0.441,
+          "displayQuantity": "≈18 g"
         },
         {
           "ingredientId": "ing_whole_milk",
           "ingredientName": "Lait Entier Bio Microfiltré",
+          "quantityMin": 150,
+          "quantityMax": 160,
+          "recipeUnit": "ml",
           "quantity": 0.16,
           "unit": "L",
           "unitCost": 1.45,
-          "totalCost": 0.232
+          "totalCost": 0.232,
+          "displayQuantity": "≈150–160 mL"
         }
       ],
       "totalIngredientsCost": 0.67,
@@ -726,26 +407,36 @@
         {
           "ingredientId": "ing_colombia_beans",
           "ingredientName": "Grains Colombie Supremo Huila",
+          "quantityMin": 19,
+          "recipeUnit": "g",
           "quantity": 0.019,
           "unit": "kg",
           "unitCost": 19.8,
-          "totalCost": 0.376
+          "totalCost": 0.376,
+          "displayQuantity": "≈19 g"
         },
         {
           "ingredientId": "ing_oat_milk",
           "ingredientName": "Boisson Avoine Oatly Barista",
+          "quantityMin": 160,
+          "quantityMax": 180,
+          "recipeUnit": "ml",
           "quantity": 0.18,
           "unit": "L",
           "unitCost": 2.1,
-          "totalCost": 0.378
+          "totalCost": 0.378,
+          "displayQuantity": "≈160–180 mL"
         },
         {
           "ingredientId": "ing_madagascar_vanilla",
           "ingredientName": "Sirop Vanille Bourbon Artisanale",
+          "quantityMin": 2,
+          "recipeUnit": "cl",
           "quantity": 2,
           "unit": "cl",
           "unitCost": 0.12,
-          "totalCost": 0.24
+          "totalCost": 0.24,
+          "displayQuantity": "≈2 cL"
         }
       ],
       "totalIngredientsCost": 0.99,
@@ -967,281 +658,38 @@
       "createdAt": "2025-01-01T00:00:00Z"
     }
   ],
-  "orders": [
-    {
-      "id": "ord_1788234148049_40wm",
-      "orderNumber": "CMD-3504",
-      "source": "pos",
-      "tableId": "tbl_9",
-      "tableNumber": "9",
-      "spaceName": "Terrasse Extérieure",
-      "serverUserId": "usr_victor",
-      "serverUserName": "Victor Noir",
-      "customerName": "Table 4",
-      "items": [
-        {
-          "id": "itm_1788234359648_wqae",
-          "productId": "prod_espresso",
-          "productName": "Espresso Single Origin",
-          "unitPrice": 2.8,
-          "quantity": 2,
-          "options": [],
-          "notes": "",
-          "station": "bar",
-          "totalPrice": 5.6,
-          "status": "preparing"
-        },
-        {
-          "id": "itm_1788234359649_0w4g",
-          "productId": "prod_flat_white",
-          "productName": "Flat White Velouté",
-          "unitPrice": 5.8,
-          "quantity": 1,
-          "options": [
-            {
-              "optionName": "Choix du Lait",
-              "choiceName": "Lait d’Avoine Barista (+0.600 DT)",
-              "priceModifier": 0.6
-            }
-          ],
-          "notes": "",
-          "station": "bar",
-          "totalPrice": 5.8,
-          "status": "preparing"
-        },
-        {
-          "id": "itm_1788234359649_k4g0",
-          "productId": "prod_flat_white",
-          "productName": "Flat White Velouté",
-          "unitPrice": 5.2,
-          "quantity": 1,
-          "options": [],
-          "notes": "",
-          "station": "bar",
-          "totalPrice": 5.2,
-          "status": "preparing"
-        }
-      ],
-      "subtotal": 15.09,
-      "tvaAmount": 1.51,
-      "discountAmount": 0,
-      "discountReason": "",
-      "total": 16.6,
-      "status": "completed",
-      "launchedAt": "2026-09-01T03:42:28.049Z",
-      "paymentStatus": "paid",
-      "specialNotes": "",
-      "stockDeducted": true,
-      "createdAt": "2026-09-01T03:42:28.049Z",
-      "updatedAt": "2026-09-01T03:47:18.125Z",
-      "paymentMethod": "split",
-      "completedAt": "2026-09-01T03:47:18.125Z"
-    },
-    {
-      "id": "ord_1001",
-      "orderNumber": "CMD-1001",
-      "source": "qr_table",
-      "tableId": "tbl_7",
-      "tableNumber": "7",
-      "spaceName": "Terrasse Extérieure",
-      "sessionId": "sess_tbl7_live",
-      "customerName": "Claire B.",
-      "items": [
-        {
-          "id": "item_1",
-          "productId": "prod_flat_white",
-          "productName": "Flat White Velouté",
-          "unitPrice": 5.8,
-          "quantity": 2,
-          "options": [
-            {
-              "optionName": "Choix du Lait",
-              "choiceName": "Lait d’Avoine Barista (+0.600 DT)",
-              "priceModifier": 0.6
-            }
-          ],
-          "station": "bar",
-          "totalPrice": 11.6,
-          "status": "preparing"
-        },
-        {
-          "id": "item_2",
-          "productId": "prod_croissant_aop",
-          "productName": "Croissant Pur Beurre AOP",
-          "unitPrice": 2.2,
-          "quantity": 2,
-          "options": [],
-          "station": "counter",
-          "totalPrice": 4.4,
-          "status": "ready"
-        }
-      ],
-      "subtotal": 14.55,
-      "tvaAmount": 1.45,
-      "discountAmount": 0,
-      "total": 16,
-      "status": "completed",
-      "paymentStatus": "paid",
-      "specialNotes": "Bien chaud svp, nous sommes en terrasse",
-      "stockDeducted": true,
-      "createdAt": "2026-09-01T03:35:06.788Z",
-      "updatedAt": "2026-09-01T05:35:25.523Z",
-      "launchedAt": "2026-09-01T03:47:44.619Z",
-      "paymentMethod": "card",
-      "completedAt": "2026-09-01T05:35:25.523Z"
-    },
-    {
-      "id": "ord_1000",
-      "orderNumber": "CMD-1000",
-      "source": "pos",
-      "tableId": "tbl_3",
-      "tableNumber": "3",
-      "spaceName": "Salle Principale",
-      "serverUserId": "usr_server",
-      "serverUserName": "Sophie Dubois",
-      "items": [
-        {
-          "id": "item_3",
-          "productId": "prod_avocado_toast",
-          "productName": "Avocado Toast & Dukkah",
-          "unitPrice": 13.5,
-          "quantity": 1,
-          "options": [
-            {
-              "optionName": "Option Œuf Bio",
-              "choiceName": "Œuf Parfait Mollet (+2.000 DT)",
-              "priceModifier": 2
-            }
-          ],
-          "station": "kitchen",
-          "totalPrice": 13.5,
-          "status": "preparing"
-        },
-        {
-          "id": "item_4",
-          "productId": "prod_iced_latte_noir",
-          "productName": "Iced Latte Vanille Noire",
-          "unitPrice": 6.5,
-          "quantity": 1,
-          "options": [
-            {
-              "optionName": "Degré de Sucrosité",
-              "choiceName": "Normal (2cl Vanille)",
-              "priceModifier": 0
-            }
-          ],
-          "station": "bar",
-          "totalPrice": 6.5,
-          "status": "ready"
-        }
-      ],
-      "subtotal": 18.18,
-      "tvaAmount": 1.82,
-      "discountAmount": 0,
-      "total": 20,
-      "status": "preparing",
-      "paymentStatus": "unpaid",
-      "stockDeducted": true,
-      "createdAt": "2026-09-01T03:13:06.788Z",
-      "updatedAt": "2026-09-01T03:28:06.788Z"
-    }
-  ],
   "sales": [
     {
-      "id": "sal_1788240925528_0df1",
-      "saleNumber": "VNT-2026-0004",
-      "orderId": "ord_1001",
-      "tableNumber": "7",
-      "source": "pos",
-      "subtotal": 14.55,
+      "id": "sal_501",
+      "saleNumber": "VNT-2025-0501",
+      "tableNumber": "1",
+      "subtotal": 10.91,
       "tvaBreakdown": [
         {
           "rate": 10,
-          "base": 14.55,
-          "tax": 1.45
+          "base": 10.91,
+          "tax": 1.09
         }
       ],
-      "totalTva": 1.45,
+      "totalTva": 1.09,
       "discount": 0,
-      "totalAmount": 16,
-      "paymentMethod": "card",
-      "amountReceived": 16,
-      "changeGiven": 0,
-      "cashierId": "usr_victor",
-      "cashierName": "Victor Noir",
+      "totalAmount": 12,
+      "paymentMethod": "contactless",
+      "cashierId": "usr_manager",
+      "cashierName": "Camille Laurent",
       "itemsSummary": [
         {
           "name": "Flat White Velouté",
           "quantity": 2,
-          "unitPrice": 5.8,
-          "total": 11.6
+          "total": 10.4
         },
-        {
-          "name": "Croissant Pur Beurre AOP",
-          "quantity": 2,
-          "unitPrice": 2.2,
-          "total": 4.4
-        }
-      ],
-      "createdAt": "2026-09-01T05:35:25.528Z"
-    },
-    {
-      "id": "sal_1788234438176_151v",
-      "saleNumber": "VNT-2026-0003",
-      "orderId": "ord_1788234148049_40wm",
-      "tableNumber": "9",
-      "source": "pos",
-      "subtotal": 15.09,
-      "tvaBreakdown": [
-        {
-          "rate": 10,
-          "base": 15.09,
-          "tax": 1.51
-        }
-      ],
-      "totalTva": 1.51,
-      "discount": 0,
-      "totalAmount": 16.6,
-      "paymentMethod": "split",
-      "splitDetails": [
-        {
-          "method": "cash",
-          "amount": 6.5
-        },
-        {
-          "method": "voucher",
-          "amount": 7.5
-        },
-        {
-          "method": "cash",
-          "amount": 2.6
-        }
-      ],
-      "amountReceived": 16.6,
-      "changeGiven": 0,
-      "cashierId": "usr_victor",
-      "cashierName": "Victor Noir",
-      "itemsSummary": [
         {
           "name": "Espresso Single Origin",
-          "quantity": 2,
-          "unitPrice": 2.8,
-          "total": 5.6
-        },
-        {
-          "name": "Flat White Velouté",
           "quantity": 1,
-          "unitPrice": 5.8,
-          "total": 5.8
-        },
-        {
-          "name": "Flat White Velouté",
-          "quantity": 1,
-          "unitPrice": 5.2,
-          "total": 5.2
+          "total": 2.8
         }
       ],
-      "createdAt": "2026-09-01T03:47:18.176Z"
+      "createdAt": "2026-09-04T12:01:20.588Z"
     },
     {
       "id": "sal_502",
@@ -1273,165 +721,24 @@
           "total": 2.2
         }
       ],
-      "createdAt": "2026-09-01T02:53:06.788Z"
-    },
-    {
-      "id": "sal_501",
-      "saleNumber": "VNT-2025-0501",
-      "tableNumber": "1",
-      "subtotal": 10.91,
-      "tvaBreakdown": [
-        {
-          "rate": 10,
-          "base": 10.91,
-          "tax": 1.09
-        }
-      ],
-      "totalTva": 1.09,
-      "discount": 0,
-      "totalAmount": 12,
-      "paymentMethod": "contactless",
-      "cashierId": "usr_manager",
-      "cashierName": "Camille Laurent",
-      "itemsSummary": [
-        {
-          "name": "Flat White Velouté",
-          "quantity": 2,
-          "total": 10.4
-        },
-        {
-          "name": "Espresso Single Origin",
-          "quantity": 1,
-          "total": 2.8
-        }
-      ],
-      "createdAt": "2026-09-01T02:08:06.788Z"
+      "createdAt": "2026-09-04T12:46:20.588Z"
     }
   ],
   "stockMovements": [
-    {
-      "id": "sm_1788240925524_nnci",
-      "ingredientId": "ing_whole_milk",
-      "ingredientName": "Lait Entier Bio Microfiltré",
-      "type": "out_sale",
-      "quantity": -0.32,
-      "unit": "L",
-      "previousStock": 34.68,
-      "newStock": 34.36,
-      "unitCost": 1.45,
-      "totalValue": 0.46,
-      "referenceDoc": "CMD-1001",
-      "reason": "Vente produit: Flat White Velouté (x2)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T05:35:25.524Z"
-    },
-    {
-      "id": "sm_1788240925524_dmse",
-      "ingredientId": "ing_ethiopia_beans",
-      "ingredientName": "Grains Éthiopie Yirgacheffe (Bio)",
-      "type": "out_sale",
-      "quantity": -0.036,
-      "unit": "kg",
-      "previousStock": 14.428,
-      "newStock": 14.392,
-      "unitCost": 24.5,
-      "totalValue": 0.88,
-      "referenceDoc": "CMD-1001",
-      "reason": "Vente produit: Flat White Velouté (x2)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T05:35:25.524Z"
-    },
-    {
-      "id": "sm_1788234438163_1efm",
-      "ingredientId": "ing_whole_milk",
-      "ingredientName": "Lait Entier Bio Microfiltré",
-      "type": "out_sale",
-      "quantity": -0.16,
-      "unit": "L",
-      "previousStock": 34.84,
-      "newStock": 34.68,
-      "unitCost": 1.45,
-      "totalValue": 0.23,
-      "referenceDoc": "CMD-3504",
-      "reason": "Vente produit: Flat White Velouté (x1)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:47:18.163Z"
-    },
-    {
-      "id": "sm_1788234438163_plrk",
-      "ingredientId": "ing_ethiopia_beans",
-      "ingredientName": "Grains Éthiopie Yirgacheffe (Bio)",
-      "type": "out_sale",
-      "quantity": -0.018,
-      "unit": "kg",
-      "previousStock": 14.446,
-      "newStock": 14.428,
-      "unitCost": 24.5,
-      "totalValue": 0.44,
-      "referenceDoc": "CMD-3504",
-      "reason": "Vente produit: Flat White Velouté (x1)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:47:18.163Z"
-    },
-    {
-      "id": "sm_1788234438149_kf3r",
-      "ingredientId": "ing_whole_milk",
-      "ingredientName": "Lait Entier Bio Microfiltré",
-      "type": "out_sale",
-      "quantity": -0.16,
-      "unit": "L",
-      "previousStock": 35,
-      "newStock": 34.84,
-      "unitCost": 1.45,
-      "totalValue": 0.23,
-      "referenceDoc": "CMD-3504",
-      "reason": "Vente produit: Flat White Velouté (x1)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:47:18.149Z"
-    },
-    {
-      "id": "sm_1788234438149_vmji",
-      "ingredientId": "ing_ethiopia_beans",
-      "ingredientName": "Grains Éthiopie Yirgacheffe (Bio)",
-      "type": "out_sale",
-      "quantity": -0.018,
-      "unit": "kg",
-      "previousStock": 14.464,
-      "newStock": 14.446,
-      "unitCost": 24.5,
-      "totalValue": 0.44,
-      "referenceDoc": "CMD-3504",
-      "reason": "Vente produit: Flat White Velouté (x1)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:47:18.149Z"
-    },
-    {
-      "id": "sm_1788234438127_ydeq",
-      "ingredientId": "ing_ethiopia_beans",
-      "ingredientName": "Grains Éthiopie Yirgacheffe (Bio)",
-      "type": "out_sale",
-      "quantity": -0.036,
-      "unit": "kg",
-      "previousStock": 14.5,
-      "newStock": 14.464,
-      "unitCost": 24.5,
-      "totalValue": 0.88,
-      "referenceDoc": "CMD-3504",
-      "reason": "Vente produit: Espresso Single Origin (x2)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:47:18.127Z"
-    },
     {
       "id": "sm_1",
       "ingredientId": "ing_ethiopia_beans",
       "ingredientName": "Grains Éthiopie Yirgacheffe (Bio)",
       "type": "in_reception",
+      "zone": "depot",
       "quantity": 10,
       "unit": "kg",
-      "previousStock": 4.5,
-      "newStock": 14.5,
+      "previousStock": 0,
+      "newStock": 5,
       "unitCost": 24.5,
       "totalValue": 245,
+      "origin": "Terres de Café (fournisseur)",
+      "destination": "Dépôt",
       "referenceDoc": "FAC-2025-081",
       "reason": "Livraison hebdomadaire café vert torréfié",
       "performedBy": "Adam Mansour",
@@ -1440,6 +747,21 @@
   ],
   "stockWastes": [],
   "inventoryAudits": [],
+  "stockLots": [
+    {
+      "id": "lot_milk_1",
+      "ingredientId": "ing_whole_milk",
+      "ingredientName": "Lait Entier Bio Microfiltré",
+      "zone": "reserve_principale",
+      "lotNumber": "LOT-LAIT-0830",
+      "expirationDate": "2026-09-06",
+      "quantity": 15,
+      "unit": "L",
+      "status": "active",
+      "receivedBy": "Adam Mansour",
+      "createdAt": "2025-08-30T08:00:00Z"
+    }
+  ],
   "suppliers": [
     {
       "id": "sup_terres_cafe",
@@ -1485,84 +807,152 @@
   ],
   "purchaseOrders": [],
   "supplierInvoices": [],
+  "productLabelMappings": [],
   "expenses": [
     {
       "id": "exp_1",
       "expenseNumber": "DEP-2025-01",
-      "category": "rent",
+      "category": "expcat_loyer",
       "title": "Loyer Commercial Août 2025",
       "amount": 2800,
       "tvaAmount": 0,
-      "date": "2026-09-01",
+      "date": "2026-09-04",
+      "expenseType": "fixed",
+      "isRecurring": true,
+      "recurrenceInterval": "monthly",
+      "recurrenceGroupId": "rec_seed_loyer",
+      "recurrenceActive": true,
       "paymentMethod": "bank_transfer",
       "paymentStatus": "paid",
       "approvedBy": "Adam Mansour",
-      "createdAt": "2026-09-01T03:38:06.788Z"
+      "createdAt": "2026-09-04T13:31:20.588Z"
     },
     {
       "id": "exp_2",
       "expenseNumber": "DEP-2025-02",
-      "category": "utilities",
+      "category": "expcat_steg",
       "title": "Facture Électricité & Climatisation",
       "amount": 420.5,
       "tvaAmount": 84.1,
-      "date": "2026-09-01",
+      "date": "2026-09-04",
+      "expenseType": "variable",
+      "isRecurring": true,
+      "recurrenceInterval": "monthly",
+      "recurrenceGroupId": "rec_seed_steg",
+      "recurrenceActive": true,
       "paymentMethod": "direct_debit",
       "paymentStatus": "paid",
       "approvedBy": "Adam Mansour",
-      "createdAt": "2026-09-01T03:38:06.788Z"
+      "createdAt": "2026-09-04T13:31:20.588Z"
     }
   ],
-  "shifts": [
+  "expenseCategories": [
     {
-      "id": "sh_1",
-      "employeeId": "usr_barista",
-      "employeeName": "Lucas Morel",
-      "role": "Barista Principal",
-      "date": "2026-09-01",
-      "startTime": "07:30",
-      "endTime": "15:30",
-      "breakMinutes": 30,
-      "status": "in_progress",
-      "notes": "Ouverture du bar et calibration moulin espresso"
+      "id": "expcat_loyer",
+      "name": "Loyer",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
     },
     {
-      "id": "sh_2",
-      "employeeId": "usr_server",
-      "employeeName": "Sophie Dubois",
-      "role": "Service Salle & Terrasse",
-      "date": "2026-09-01",
-      "startTime": "10:00",
-      "endTime": "18:00",
-      "breakMinutes": 45,
-      "status": "in_progress",
-      "notes": "Service midi & gestion commandes QR terrasse"
+      "id": "expcat_steg",
+      "name": "STEG",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_sonede",
+      "name": "SONEDE",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_telecom",
+      "name": "Téléphone / Internet",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_personnel",
+      "name": "Personnel",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_entretien",
+      "name": "Entretien",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_reparation",
+      "name": "Réparation",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_marketing",
+      "name": "Marketing",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_fournitures",
+      "name": "Fournitures",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_transport",
+      "name": "Transport",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_taxes",
+      "name": "Taxes et frais",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "id": "expcat_divers",
+      "name": "Divers",
+      "active": true,
+      "createdBy": "Système",
+      "createdAt": "2025-01-01T00:00:00Z"
     }
   ],
   "attendances": [
     {
       "id": "att_1",
-      "employeeId": "usr_barista",
+      "employeeId": "emp_1",
       "employeeName": "Lucas Morel",
-      "date": "2026-09-01",
-      "clockInTime": "2026-09-01T07:28:00Z",
-      "breakMinutes": 30,
-      "totalHoursWorked": 5.5,
-      "status": "active"
+      "date": "2026-09-04",
+      "status": "present",
+      "plannedStartTime": "07:30",
+      "plannedEndTime": "15:30"
     },
     {
       "id": "att_2",
-      "employeeId": "usr_server",
+      "employeeId": "emp_2",
       "employeeName": "Sophie Dubois",
-      "date": "2026-09-01",
-      "clockInTime": "2026-09-01T09:55:00Z",
-      "breakMinutes": 0,
-      "totalHoursWorked": 3,
-      "status": "active"
+      "date": "2026-09-04",
+      "status": "late",
+      "plannedStartTime": "10:00",
+      "plannedEndTime": "18:00",
+      "notes": "Arrivée à 10h20"
     }
   ],
-  "leaves": [],
-  "payrolls": [],
   "alerts": [
     {
       "id": "alt_qr_1001",
@@ -1576,7 +966,7 @@
         "orderId": "ord_1001",
         "tableNumber": "7"
       },
-      "createdAt": "2026-09-01T03:35:06.788Z"
+      "createdAt": "2026-09-04T13:28:20.588Z"
     },
     {
       "id": "alt_stock_1",
@@ -1586,99 +976,17 @@
       "severity": "info",
       "read": false,
       "linkUrl": "/stock",
-      "createdAt": "2026-09-01T01:38:06.788Z"
+      "createdAt": "2026-09-04T11:31:20.588Z"
     }
   ],
   "journal": [
-    {
-      "id": "JRN-1788240925542-kzjc",
-      "action": "Encaissement Vente",
-      "category": "sales",
-      "details": "Vente VNT-2026-0004 (16.000 DT) encaissée par Victor Noir via card",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T05:35:25.542Z"
-    },
-    {
-      "id": "JRN-1788234557950-jc8q",
-      "action": "Mise à jour Table",
-      "category": "tables",
-      "details": "Modification de Grande Table 5",
-      "performedBy": "Victor Noir",
-      "metadata": {
-        "tableId": "tbl_5",
-        "updates": {
-          "status": "occupied",
-          "performedBy": "Victor Noir"
-        }
-      },
-      "createdAt": "2026-09-01T03:49:17.950Z"
-    },
-    {
-      "id": "JRN-1788234557930-j63n",
-      "action": "Mise à jour Réservation",
-      "category": "tables",
-      "details": "Réservation Alexandre Dumas (2026-09-01) ➔ seated",
-      "performedBy": "Victor Noir",
-      "metadata": {
-        "reservationId": "res_1"
-      },
-      "createdAt": "2026-09-01T03:49:17.930Z"
-    },
-    {
-      "id": "JRN-1788234464632-dz4r",
-      "action": "Validation Commande QR",
-      "category": "orders",
-      "details": "Commande CMD-1001 (Table 7) acceptée par Victor Noir",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:47:44.632Z"
-    },
-    {
-      "id": "JRN-1788234438197-bhas",
-      "action": "Encaissement Vente",
-      "category": "sales",
-      "details": "Vente VNT-2026-0003 (16.600 DT) encaissée par Victor Noir via split",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:47:18.197Z"
-    },
-    {
-      "id": "JRN-1788234359660-xtwz",
-      "action": "Modification Commande",
-      "category": "orders",
-      "details": "Commande CMD-3504 mise à jour par Victor Noir (Total: 16.600 DT)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:45:59.661Z"
-    },
-    {
-      "id": "JRN-1788234182045-ykos",
-      "action": "Transfert de Table",
-      "category": "orders",
-      "details": "Commande CMD-3504 transférée de la Table 4 vers la Table 9 par Victor Noir",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:43:02.045Z"
-    },
-    {
-      "id": "JRN-1788234148068-qp04",
-      "action": "Lancement Commande",
-      "category": "orders",
-      "details": "Commande CMD-3504 lancée par Victor Noir (Table 4)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:42:28.068Z"
-    },
-    {
-      "id": "JRN-1788234148053-wx7t",
-      "action": "Commande Caisse Créée",
-      "category": "orders",
-      "details": "Commande CMD-3504 (11.400 DT) créée par Victor Noir (Table 4)",
-      "performedBy": "Victor Noir",
-      "createdAt": "2026-09-01T03:42:28.053Z"
-    },
     {
       "id": "jrn_init",
       "action": "Démarrage Système",
       "category": "admin",
       "details": "Initialisation de la base de données opérationnelle Café Noir Système.",
       "performedBy": "Système",
-      "createdAt": "2026-09-01T03:38:06.788Z"
+      "createdAt": "2026-09-04T13:31:20.588Z"
     },
     {
       "id": "jrn_order_qr",
@@ -1686,24 +994,7 @@
       "category": "orders",
       "details": "Commande CMD-1001 soumise depuis le QR code de la Table 7.",
       "performedBy": "Client QR (Table 7)",
-      "createdAt": "2026-09-01T03:35:06.788Z"
+      "createdAt": "2026-09-04T13:28:20.588Z"
     }
-  ],
-  "cashRegisters": [
-    {
-      "id": "reg_today",
-      "cashierId": "usr_admin",
-      "cashierName": "Adam Mansour",
-      "openedAt": "2026-09-01T07:15:00Z",
-      "openingCash": 250,
-      "expectedClosingCash": 259.1,
-      "totalSalesCash": 9.1,
-      "totalSalesCard": 54,
-      "totalSalesOther": 7.5,
-      "totalSalesAmount": 70.6,
-      "status": "open",
-      "notes": "Fond de caisse vérifié le matin"
-    }
-  ],
-  "cashMovements": []
+  ]
 }

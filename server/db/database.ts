@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DatabaseSchema, User, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, ExpenseCategory, Shift, AttendanceRecord, LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession } from '../types/index.js';
+import { DatabaseSchema, User, EmployeeRecord, AttendanceRecord, PersonnelFinancialRecord, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, ExpenseCategory, SystemAlert, JournalEntry, CashRegisterSession } from '../types/index.js';
 
 /** Paramètres applicatifs persistants (config, non-métier) */
 export interface AppSettings {
@@ -42,7 +42,7 @@ class DatabaseEngine {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed: DatabaseSchema = JSON.parse(raw);
         // V1 scope migration: permanently purge domains expressly excluded from the cahier des charges.
-        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls'] as const) {
+        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls', 'shifts'] as const) {
           delete (parsed as any)[key];
         }
         // The application has one administrator identity; employees are HR records, not logins.
@@ -55,10 +55,11 @@ class DatabaseEngine {
             parsed[key] = seed[key] as any;
           }
         }
-        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls']) delete (parsed as any)[key];
+        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls', 'shifts']) delete (parsed as any)[key];
         this.migrateLegacyStockData(parsed);
         this.migrateLegacyPurchasingData(parsed);
         this.migrateLegacyExpenseData(parsed);
+        this.migrateLegacyAttendanceData(parsed);
         this.persist(parsed);
         return parsed;
       }
@@ -153,6 +154,17 @@ class DatabaseEngine {
         exp.expenseType = 'variable';
       }
     }
+  }
+
+  /**
+   * Rétrocompatibilité : les anciennes présences reposaient sur un pointage horodaté (clockInTime/
+   * status 'active'|'completed'|'modified'), aujourd'hui remplacé par une saisie 100% manuelle avec
+   * statut Présent/Absent/Congé/Repos/Retard. Ces enregistrements incompatibles sont écartés plutôt
+   * que de faire planter l'affichage du planning avec un statut inconnu.
+   */
+  private migrateLegacyAttendanceData(parsed: DatabaseSchema): void {
+    const validStatuses = new Set(['present', 'absent', 'leave', 'rest', 'late']);
+    parsed.attendances = (parsed.attendances || []).filter((a: any) => a && validStatuses.has(a.status));
   }
 
   private getSeedPlanElements(): PlanElement[] {
@@ -1025,58 +1037,90 @@ class DatabaseEngine {
       }
     ];
 
-    const shifts: Shift[] = [
+    const employeeCreatedAt = new Date().toISOString();
+    const lastMonthStr = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const employees: EmployeeRecord[] = [
       {
-        id: 'sh_1',
-        employeeId: 'usr_barista',
-        employeeName: 'Lucas Morel',
-        role: 'Barista Principal',
-        date: todayStr,
-        startTime: '07:30',
-        endTime: '15:30',
-        breakMinutes: 30,
-        status: 'in_progress',
-        notes: 'Ouverture du bar et calibration moulin espresso'
+        id: 'emp_1',
+        name: 'Lucas Morel',
+        phone: '+216 20 123 456',
+        position: 'Barista Principal',
+        entryDate: '2024-03-01',
+        active: true,
+        baseSalary: 950,
+        cinNumber: '08123456',
+        cinIssueDate: '2016-05-12',
+        createdAt: employeeCreatedAt,
+        updatedAt: employeeCreatedAt
       },
       {
-        id: 'sh_2',
-        employeeId: 'usr_server',
-        employeeName: 'Sophie Dubois',
-        role: 'Service Salle & Terrasse',
-        date: todayStr,
-        startTime: '10:00',
-        endTime: '18:00',
-        breakMinutes: 45,
-        status: 'in_progress',
-        notes: 'Service midi & gestion commandes QR terrasse'
+        id: 'emp_2',
+        name: 'Sophie Dubois',
+        phone: '+216 22 987 654',
+        position: 'Service Salle & Terrasse',
+        entryDate: '2024-06-15',
+        active: true,
+        baseSalary: 820,
+        cinNumber: '09456789',
+        cinIssueDate: '2018-02-20',
+        createdAt: employeeCreatedAt,
+        updatedAt: employeeCreatedAt
       }
     ];
 
     const attendances: AttendanceRecord[] = [
       {
         id: 'att_1',
-        employeeId: 'usr_barista',
+        employeeId: 'emp_1',
         employeeName: 'Lucas Morel',
         date: todayStr,
-        clockInTime: `${todayStr}T07:28:00Z`,
-        breakMinutes: 30,
-        totalHoursWorked: 5.5,
-        status: 'active'
+        status: 'present',
+        plannedStartTime: '07:30',
+        plannedEndTime: '15:30'
       },
       {
         id: 'att_2',
-        employeeId: 'usr_server',
+        employeeId: 'emp_2',
         employeeName: 'Sophie Dubois',
         date: todayStr,
-        clockInTime: `${todayStr}T09:55:00Z`,
-        breakMinutes: 0,
-        totalHoursWorked: 3.0,
-        status: 'active'
+        status: 'late',
+        plannedStartTime: '10:00',
+        plannedEndTime: '18:00',
+        notes: 'Arrivée à 10h20'
       }
     ];
 
-    const leaves: LeaveRequest[] = [];
-    const payrolls: PayrollRecord[] = [];
+    const personnelFinancialRecords: PersonnelFinancialRecord[] = [
+      {
+        id: 'fin_1',
+        employeeId: 'emp_1',
+        employeeName: 'Lucas Morel',
+        date: lastMonthStr,
+        baseSalary: 950,
+        advances: 0,
+        bonuses: 50,
+        deductions: 0,
+        amountPaid: 1000,
+        paymentDate: lastMonthStr,
+        createdAt: employeeCreatedAt,
+        updatedAt: employeeCreatedAt
+      },
+      {
+        id: 'fin_2',
+        employeeId: 'emp_2',
+        employeeName: 'Sophie Dubois',
+        date: lastMonthStr,
+        baseSalary: 820,
+        advances: 100,
+        bonuses: 0,
+        deductions: 0,
+        amountPaid: 720,
+        paymentDate: lastMonthStr,
+        createdAt: employeeCreatedAt,
+        updatedAt: employeeCreatedAt
+      }
+    ];
 
     const alerts: SystemAlert[] = [
       {
@@ -1140,6 +1184,8 @@ class DatabaseEngine {
 
     return {
       users,
+      employees,
+      personnelFinancialRecords,
       spaces,
       tables,
       planElements: this.getSeedPlanElements(),
@@ -1160,10 +1206,7 @@ class DatabaseEngine {
       productLabelMappings: [],
       expenses,
       expenseCategories,
-      shifts,
       attendances,
-      leaves,
-      payrolls,
       alerts,
       journal,
       cashRegisters,

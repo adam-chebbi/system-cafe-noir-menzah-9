@@ -69,7 +69,7 @@ export class ReportService {
     const expenses = db.get('expenses') || [];
     const supplierInvoices = (db.get('supplierInvoices') || []).filter((inv: any) => !inv.cancelled);
     const ingredients = db.get('ingredients') || [];
-    const payrolls = db.get('payrolls') || [];
+    const personnelFinancialRecords = db.get('personnelFinancialRecords') || [];
     const recipes = db.get('recipes') || [];
     const products = db.get('products') || [];
     const categories = db.get('categories') || [];
@@ -151,10 +151,15 @@ export class ReportService {
       }
     }
 
-    // 6. Coût du personnel (Salaires période)
-    const curPeriodMonth = `${curStart.getFullYear()}-${String(curStart.getMonth() + 1).padStart(2, '0')}`;
-    const periodPayrolls = payrolls.filter((p: any) => p.periodMonth === curPeriodMonth && !p.cancelled);
-    const totalStaffCost = periodPayrolls.reduce((sum: number, p: any) => sum + (p.netSalary || p.grossSalary || 0), 0);
+    // 6. Coût du personnel (suivi financier RH saisi manuellement sur la période)
+    const periodFinancialRecords = personnelFinancialRecords.filter((r: any) => {
+      const d = new Date(r.date).getTime();
+      return d >= curStart.getTime() && d <= curEnd.getTime();
+    });
+    const totalStaffCost = periodFinancialRecords.reduce(
+      (sum: number, r: any) => sum + (r.baseSalary || 0) + (r.advances || 0) + (r.bonuses || 0) - (r.deductions || 0),
+      0
+    );
 
     // 7. Marge estimée (Brute et Nette)
     const totalTva = curSales.reduce((sum: number, s: any) => sum + (s.totalTva || 0), 0);

@@ -55,33 +55,6 @@ router.get('/users', (req, res) => {
   res.json(db.get('users'));
 });
 
-router.post('/users', (req, res) => {
-  try {
-    const user = HRService.createEmployee(req.body, req.body.performedBy || 'Admin');
-    res.status(201).json(user);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.patch('/users/:id', (req, res) => {
-  try {
-    const user = HRService.updateEmployee(req.params.id, req.body, req.body.performedBy || 'Admin');
-    res.json(user);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.delete('/users/:id', (req, res) => {
-  try {
-    HRService.deleteEmployee(req.params.id, (req.query.performedBy as string) || 'Admin');
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // --- DASHBOARD & METRICS ---
 router.get('/dashboard/metrics', (req, res) => {
   try {
@@ -1118,139 +1091,93 @@ router.delete('/expense-categories/:id', (req, res) => {
   }
 });
 
-// --- HR, SHIFTS, ATTENDANCE, PAYROLL ---
-router.get('/hr/shifts', (req, res) => {
-  const start = req.query.start as string;
-  const end = req.query.end as string;
-  res.json(HRService.getShifts(start && end ? { start, end } : undefined));
+// --- HR V1: employee files, manual planning/presence and financial tracking ---
+router.get('/hr/employees', (_req, res) => {
+  res.json(HRService.getEmployees());
 });
 
-router.post('/hr/shifts', (req, res) => {
+router.post('/hr/employees', (req, res) => {
   try {
-    const shift = HRService.createShift(req.body, req.body.performedBy || 'Manager');
-    res.status(201).json(shift);
+    const employee = HRService.createEmployee(req.body, req.body.performedBy || 'Administrateur');
+    res.status(201).json(employee);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-router.patch('/hr/shifts/:id', (req, res) => {
+router.patch('/hr/employees/:id', (req, res) => {
   try {
-    const shift = HRService.updateShift(req.params.id, req.body, req.body.performedBy || 'Manager');
-    res.json(shift);
+    const employee = HRService.updateEmployee(req.params.id, req.body, req.body.performedBy || 'Administrateur');
+    res.json(employee);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-router.delete('/hr/shifts/:id', (req, res) => {
+router.delete('/hr/employees/:id', (req, res) => {
   try {
-    HRService.deleteShift(req.params.id, (req.query.performedBy as string) || 'Manager');
+    const employee = HRService.setEmployeeActive(req.params.id, false, (req.query.performedBy as string) || 'Administrateur');
+    res.json(employee);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/hr/presence', (req, res) => {
+  res.json(HRService.getAttendances({
+    start: req.query.start as string,
+    end: req.query.end as string,
+    employeeId: req.query.employeeId as string
+  }));
+});
+
+router.put('/hr/presence', (req, res) => {
+  try {
+    const record = HRService.saveAttendance(req.body, req.body.performedBy || 'Administrateur');
+    res.json(record);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/hr/presence/:id', (req, res) => {
+  try {
+    HRService.deleteAttendance(req.params.id, (req.query.performedBy as string) || 'Administrateur');
     res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-router.get('/hr/attendances', (req, res) => {
-  res.json(HRService.getAttendances(req.query.date as string));
+router.get('/hr/financial-records', (req, res) => {
+  res.json(HRService.getFinancialRecords(req.query.employeeId as string));
 });
 
-router.post('/hr/attendance/clock-in', (req, res) => {
+router.post('/hr/financial-records', (req, res) => {
   try {
-    const { employeeId, performedBy } = req.body;
-    const rec = HRService.clockIn(employeeId, performedBy || 'Employé');
-    res.status(201).json(rec);
+    const record = HRService.createFinancialRecord(req.body, req.body.performedBy || 'Administrateur');
+    res.status(201).json(record);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-router.post('/hr/attendance/clock-out', (req, res) => {
+router.patch('/hr/financial-records/:id', (req, res) => {
   try {
-    const { employeeId, breakMinutes, notes, performedBy } = req.body;
-    const rec = HRService.clockOut(employeeId, parseInt(breakMinutes) || 0, notes, performedBy || 'Employé');
-    res.json(rec);
+    const record = HRService.updateFinancialRecord(req.params.id, req.body, req.body.performedBy || 'Administrateur');
+    res.json(record);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-router.get('/hr/leaves', (req, res) => {
-  res.json(HRService.getLeaves());
-});
-
-router.post('/hr/leaves', (req, res) => {
+router.delete('/hr/financial-records/:id', (req, res) => {
   try {
-    const leave = HRService.createLeave(req.body, req.body.performedBy || 'Employé');
-    res.status(201).json(leave);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.patch('/hr/leaves/:id', (req, res) => {
-  try {
-    const leave = HRService.updateLeaveStatus(req.params.id, req.body.status, req.body.reviewedBy || 'Manager');
-    res.json(leave);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.delete('/hr/leaves/:id', (req, res) => {
-  try {
-    HRService.deleteLeave(req.params.id, (req.query.performedBy as string) || 'Manager');
+    HRService.deleteFinancialRecord(req.params.id, (req.query.performedBy as string) || 'Administrateur');
     res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
-});
-
-router.get('/hr/payrolls', (req, res) => {
-  res.json(HRService.getPayrolls());
-});
-
-router.post('/hr/payrolls/generate', (req, res) => {
-  try {
-    const { employeeId, periodMonth, bonuses, deductions, performedBy } = req.body;
-    const payroll = HRService.generatePayroll(employeeId, periodMonth, parseFloat(bonuses) || 0, parseFloat(deductions) || 0, performedBy || 'Admin');
-    res.status(201).json(payroll);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.post('/hr/payrolls/manual', (req, res) => {
-  try {
-    const payroll = HRService.createManualPayroll(req.body, req.body.performedBy || 'Admin');
-    res.status(201).json(payroll);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.patch('/hr/payrolls/:id', (req, res) => {
-  try {
-    const payroll = HRService.updatePayroll(req.params.id, req.body, req.body.performedBy || 'Admin');
-    res.json(payroll);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.post('/hr/payrolls/:id/cancel', (req, res) => {
-  try {
-    const { reason, performedBy } = req.body;
-    const payroll = HRService.cancelPayroll(req.params.id, reason || 'Annulation manuelle', performedBy || 'Admin');
-    res.json(payroll);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.get('/hr/performance', (req, res) => {
-  res.json(HRService.getStaffPerformance());
 });
 
 // --- REPORTS & FINANCIALS ---
