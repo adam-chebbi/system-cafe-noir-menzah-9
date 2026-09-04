@@ -25,7 +25,6 @@ import {
   Plus,
   Trash2
 } from 'lucide-react';
-import { ReceiptModal } from './ReceiptModal';
 
 interface SalesHistoryViewProps {
   currentUser: User | null;
@@ -46,7 +45,6 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
   const hasValidatedIdRef = useRef(false);
 
   // Modals state
-  const [selectedSaleForReceipt, setSelectedSaleForReceipt] = useState<Sale | null>(null);
   const [selectedSaleForDetails, setSelectedSaleForDetails] = useState<Sale | null>(null);
   const [selectedSaleForHistory, setSelectedSaleForHistory] = useState<Sale | null>(null);
 
@@ -505,7 +503,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
 
                         {/* Thermal Receipt Print */}
                         <button
-                          onClick={() => setSelectedSaleForReceipt(sale)}
+                          disabled
                           className="p-1.5 rounded-lg bg-[#252A27] text-[#A4DEC2] hover:bg-[#343B37] transition-colors"
                           title="Imprimer ticket de caisse"
                         >
@@ -633,7 +631,7 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
             <div className="flex space-x-2 pt-2">
               <button
                 onClick={() => {
-                  setSelectedSaleForReceipt(selectedSaleForDetails);
+                  setSelectedSaleForDetails(null);
                   setSelectedSaleForDetails(null);
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-[#252A27] text-[#A4DEC2] text-xs font-bold flex items-center justify-center space-x-1.5"
@@ -964,12 +962,6 @@ export const SalesHistoryView: React.FC<SalesHistoryViewProps> = ({
         </div>
       )}
 
-      {/* Thermal Receipt Print Modal */}
-      <ReceiptModal
-        isOpen={!!selectedSaleForReceipt}
-        onClose={() => setSelectedSaleForReceipt(null)}
-        sale={selectedSaleForReceipt}
-      />
     </div>
   );
 };

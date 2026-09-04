@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DatabaseSchema, User, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, Shift, AttendanceRecord, LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession } from '../types/index.js';
+import { DatabaseSchema, User, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, ExpenseCategory, Shift, AttendanceRecord, LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession } from '../types/index.js';
 
 /** Paramètres applicatifs persistants (config, non-métier) */
 export interface AppSettings {
@@ -41,13 +41,24 @@ class DatabaseEngine {
       if (fs.existsSync(DB_FILE)) {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed: DatabaseSchema = JSON.parse(raw);
+        // V1 scope migration: permanently purge domains expressly excluded from the cahier des charges.
+        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls'] as const) {
+          delete (parsed as any)[key];
+        }
+        // The application has one administrator identity; employees are HR records, not logins.
+        parsed.users = (parsed.users || []).filter((u: any) => u?.role === 'admin').slice(0, 1);
+        if (parsed.users[0]) {
+          parsed.users[0] = { ...parsed.users[0], role: 'admin', pin: '' };
+        }
         for (const key of Object.keys(seed) as (keyof DatabaseSchema)[]) {
           if (!parsed[key] || !Array.isArray(parsed[key])) {
             parsed[key] = seed[key] as any;
           }
         }
+        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls']) delete (parsed as any)[key];
         this.migrateLegacyStockData(parsed);
         this.migrateLegacyPurchasingData(parsed);
+        this.migrateLegacyExpenseData(parsed);
         this.persist(parsed);
         return parsed;
       }
@@ -104,6 +115,42 @@ class DatabaseEngine {
       if (!Array.isArray(inv.payments)) inv.payments = [];
       if (inv.stockUpdated && !inv.stockZone) {
         inv.stockZone = 'reserve_principale';
+      }
+    }
+  }
+
+  /**
+   * Rétrocompatibilité : avant l'introduction des catégories de dépenses adaptables, `Expense.category`
+   * contenait soit l'un des 8 anciens libellés anglais figés, soit (bug de l'ancienne UI) un texte
+   * français en clair jamais aligné sur ce même union. On remappe les deux cas vers les nouvelles
+   * catégories par défaut plutôt que de laisser des dépenses avec une catégorie orpheline.
+   */
+  private migrateLegacyExpenseData(parsed: DatabaseSchema): void {
+    const legacyCategoryMap: Record<string, string> = {
+      rent: 'expcat_loyer',
+      utilities: 'expcat_steg',
+      maintenance: 'expcat_entretien',
+      supplies: 'expcat_fournitures',
+      marketing: 'expcat_marketing',
+      salaries: 'expcat_personnel',
+      insurance: 'expcat_taxes',
+      other: 'expcat_divers',
+      'Loyer Commercial': 'expcat_loyer',
+      'Électricité, Eau & Gaz': 'expcat_steg',
+      'Maintenance Machine Espresso & Moulins': 'expcat_entretien',
+      'Emballages & Gobelets Écologiques': 'expcat_fournitures',
+      'Assurance & Banque': 'expcat_taxes',
+      'Logiciels, Réseau & Abonnements': 'expcat_divers',
+      'Produits d’Entretien & Hygiène': 'expcat_entretien',
+      Autre: 'expcat_divers'
+    };
+
+    for (const exp of parsed.expenses || []) {
+      if (exp.category && !exp.category.startsWith('expcat_')) {
+        exp.category = legacyCategoryMap[exp.category] || 'expcat_divers';
+      }
+      if (!exp.expenseType) {
+        exp.expenseType = 'variable';
       }
     }
   }
@@ -924,15 +971,35 @@ class DatabaseEngine {
       }
     ];
 
+    const expenseCategories: ExpenseCategory[] = [
+      { id: 'expcat_loyer', name: 'Loyer', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_steg', name: 'STEG', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_sonede', name: 'SONEDE', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_telecom', name: 'Téléphone / Internet', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_personnel', name: 'Personnel', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_entretien', name: 'Entretien', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_reparation', name: 'Réparation', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_marketing', name: 'Marketing', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_fournitures', name: 'Fournitures', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_transport', name: 'Transport', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_taxes', name: 'Taxes et frais', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' },
+      { id: 'expcat_divers', name: 'Divers', active: true, createdBy: 'Système', createdAt: '2025-01-01T00:00:00Z' }
+    ];
+
     const expenses: Expense[] = [
       {
         id: 'exp_1',
         expenseNumber: 'DEP-2025-01',
-        category: 'rent',
+        category: 'expcat_loyer',
         title: 'Loyer Commercial Août 2025',
         amount: 2800.0,
         tvaAmount: 0,
         date: `${todayStr}`,
+        expenseType: 'fixed',
+        isRecurring: true,
+        recurrenceInterval: 'monthly',
+        recurrenceGroupId: 'rec_seed_loyer',
+        recurrenceActive: true,
         paymentMethod: 'bank_transfer',
         paymentStatus: 'paid',
         approvedBy: 'Adam Mansour',
@@ -941,11 +1008,16 @@ class DatabaseEngine {
       {
         id: 'exp_2',
         expenseNumber: 'DEP-2025-02',
-        category: 'utilities',
+        category: 'expcat_steg',
         title: 'Facture Électricité & Climatisation',
         amount: 420.50,
         tvaAmount: 84.10,
         date: `${todayStr}`,
+        expenseType: 'variable',
+        isRecurring: true,
+        recurrenceInterval: 'monthly',
+        recurrenceGroupId: 'rec_seed_steg',
+        recurrenceActive: true,
         paymentMethod: 'direct_debit',
         paymentStatus: 'paid',
         approvedBy: 'Adam Mansour',
@@ -1087,6 +1159,7 @@ class DatabaseEngine {
       supplierInvoices: [],
       productLabelMappings: [],
       expenses,
+      expenseCategories,
       shifts,
       attendances,
       leaves,

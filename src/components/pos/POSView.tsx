@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import {
   Product,
-  Table,
   Sale,
   User
 } from '../../types';
@@ -41,8 +40,6 @@ export const POSView: React.FC = () => {
 
   // Shared data state
   const [products, setProducts] = useState<Product[]>([]);
-  const [tables, setTables] = useState<Table[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Sync with global sub-tab navigation
@@ -54,14 +51,8 @@ export const POSView: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [prods, tbls, usrs] = await Promise.all([
-        api.getProducts(),
-        api.getTables(),
-        api.getUsers()
-      ]);
+      const prods = await api.getProducts();
       setProducts(Array.isArray(prods) ? prods : []);
-      setTables(Array.isArray(tbls) ? tbls : []);
-      setUsers(Array.isArray(usrs) ? usrs : []);
     } catch (err) {
       console.error('Failed to load Ventes module data:', err);
     } finally {
@@ -169,8 +160,6 @@ export const POSView: React.FC = () => {
         {activeTab === 'manual' && (
           <ManualSaleEntry
             products={products}
-            tables={tables}
-            users={users}
             currentUser={currentUser}
             onSaleCreated={handleSaleCreated}
           />

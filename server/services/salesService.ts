@@ -1,5 +1,6 @@
 import { db } from '../db/database.js';
 import { Sale, CashRegisterSession, CashMovement, ClosingRegisterPayload, StockMovement, Expense, StockZone } from '../types/index.js';
+import { ExpenseService } from './expenseService.js';
 
 export class SalesService {
   public static getSales(filter?: {
@@ -635,15 +636,16 @@ export class SalesService {
 
       for (const expData of payload.newExpenses) {
         if (!expData.amount || expData.amount <= 0) continue;
-        const expNumber = `DEP-${new Date().getFullYear()}-${String(expenses.length + 1).padStart(3, '0')}`;
+        const expNumber = ExpenseService.nextExpenseNumber(expenses);
         const newExpense: Expense = {
           id: `exp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
           expenseNumber: expNumber,
-          category: (expData.category as any) || 'supplies',
+          category: expData.category || 'expcat_fournitures',
           title: expData.title || 'Dépense caisse de clôture',
           amount: Number(expData.amount.toFixed(3)),
           tvaAmount: 0,
           date: new Date().toISOString().split('T')[0],
+          expenseType: 'variable',
           paymentMethod: 'cash',
           paymentStatus: 'paid',
           approvedBy: performedBy,

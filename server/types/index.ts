@@ -571,15 +571,35 @@ export interface SupplierInvoice {
   retroNotes?: string;
 }
 
+/** Catégorie de dépense, adaptable par l'administrateur (remplace l'ancienne liste figée). */
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  /** Désactivée = n'apparaît plus au choix pour une nouvelle dépense, mais reste affichée sur l'historique existant. */
+  active: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface Expense {
   id: string;
   expenseNumber: string;
-  category: 'rent' | 'utilities' | 'maintenance' | 'supplies' | 'marketing' | 'salaries' | 'insurance' | 'other';
+  /** Référence à ExpenseCategory.id. */
+  category: string;
   title: string;
   description?: string;
   amount: number;
   tvaAmount: number;
   date: string;
+  /** Fixe (loyer, abonnements...) ou variable (entretien ponctuel, achats...). */
+  expenseType: 'fixed' | 'variable';
+  /** Dépense récurrente (ex. loyer mensuel) — jamais générée automatiquement, toujours renouvelée manuellement. */
+  isRecurring?: boolean;
+  recurrenceInterval?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  /** Identifiant commun à toutes les occurrences d'une même récurrence (l'originale + ses renouvellements). */
+  recurrenceGroupId?: string;
+  /** false = récurrence arrêtée par l'administrateur ; ne relance plus d'échéance "à renouveler". */
+  recurrenceActive?: boolean;
   paymentMethod: 'bank_transfer' | 'card' | 'cash' | 'direct_debit';
   paymentStatus: 'paid' | 'pending';
   receiptUrl?: string;
@@ -786,6 +806,7 @@ export interface DatabaseSchema {
   supplierInvoices: SupplierInvoice[];
   productLabelMappings: ProductLabelMapping[];
   expenses: Expense[];
+  expenseCategories: ExpenseCategory[];
   shifts: Shift[];
   attendances: AttendanceRecord[];
   leaves: LeaveRequest[];

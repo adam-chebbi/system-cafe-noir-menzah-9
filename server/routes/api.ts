@@ -1085,6 +1085,39 @@ router.delete('/expenses/:id', (req, res) => {
   }
 });
 
+// --- EXPENSE CATEGORIES (adaptables par l'administrateur) ---
+router.get('/expense-categories', (req, res) => {
+  res.json(ExpenseService.getExpenseCategories());
+});
+
+router.post('/expense-categories', (req, res) => {
+  try {
+    const category = ExpenseService.createExpenseCategory(req.body.name, req.body.performedBy || 'Admin');
+    res.status(201).json(category);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/expense-categories/:id', (req, res) => {
+  try {
+    const { name, active, performedBy } = req.body;
+    const category = ExpenseService.updateExpenseCategory(req.params.id, { name, active }, performedBy || 'Admin');
+    res.json(category);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/expense-categories/:id', (req, res) => {
+  try {
+    ExpenseService.deleteExpenseCategory(req.params.id, (req.query.performedBy as string) || 'Admin');
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // --- HR, SHIFTS, ATTENDANCE, PAYROLL ---
 router.get('/hr/shifts', (req, res) => {
   const start = req.query.start as string;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Product, Table, User, Sale, PaymentMethod, ConsumptionType, SaleItem } from '../../types';
+import { Product, User, Sale, PaymentMethod, ConsumptionType, SaleItem } from '../../types';
 import { api } from '../../services/api';
 import {
   Plus,
@@ -21,8 +21,6 @@ import {
 
 interface ManualSaleEntryProps {
   products: Product[];
-  tables: Table[];
-  users: User[];
   currentUser: User | null;
   onSaleCreated: (sale: Sale) => void;
 }
@@ -39,8 +37,6 @@ interface ManualSaleLine {
 
 export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
   products,
-  tables,
-  users,
   currentUser,
   onSaleCreated
 }) => {
@@ -337,11 +333,7 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                   onChange={e => setCashierName(e.target.value)}
                   className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
                 >
-                  {users.map(u => (
-                    <option key={u.id} value={u.name}>
-                      {u.name} ({u.role})
-                    </option>
-                  ))}
+                  <option value={currentUser?.name || 'Administrateur'}>{currentUser?.name || 'Administrateur'}</option>
                 </select>
               </div>
             </div>

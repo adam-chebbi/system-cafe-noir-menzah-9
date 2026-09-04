@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SystemProvider, useSystem } from './context/SystemContext';
-import { PinAuthModal } from './components/layout/PinAuthModal';
 import { QuickAccessLauncher } from './components/layout/QuickAccessLauncher';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { POSView } from './components/pos/POSView';
-import { OrdersKDSView } from './components/orders/OrdersKDSView';
-import { TablesView } from './components/tables/TablesView';
 import { ProductsView } from './components/catalog/ProductsView';
 import { StockView } from './components/stock/StockView';
 import { SuppliersView } from './components/suppliers/SuppliersView';
@@ -15,7 +12,6 @@ import { ExpensesView } from './components/expenses/ExpensesView';
 import { ReportsView } from './components/reports/ReportsView';
 import { JournalView } from './components/journal/JournalView';
 import { PublicWebsiteView } from './components/public/PublicWebsiteView';
-import { QrTableOrderView } from './components/public/QrTableOrderView';
 
 import { AppHeader } from './components/layout/AppHeader';
 
@@ -27,13 +23,11 @@ import {
 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { isPinModalOpen, setIsPinModalOpen } = useAuth();
+  useAuth();
   const {
     currentView,
     setCurrentView,
     navigateTo,
-    activeQrTableId,
-    setActiveQrTableId,
     routeNotification,
     clearRouteNotification
   } = useSystem();
@@ -43,19 +37,6 @@ const AppContent: React.FC = () => {
     return (
       <PublicWebsiteView
         onOpenStaffApp={() => setCurrentView('dashboard')}
-        onOpenQrOrder={tId => {
-          if (tId) setActiveQrTableId(tId);
-          navigateTo('qr_customer_order', null, null, { tableId: tId });
-        }}
-      />
-    );
-  }
-
-  if (currentView === 'qr_customer_order') {
-    return (
-      <QrTableOrderView
-        tableId={activeQrTableId || undefined}
-        onBackToApp={() => setCurrentView('dashboard')}
       />
     );
   }
@@ -102,8 +83,6 @@ const AppContent: React.FC = () => {
       <main className="flex-1 overflow-x-hidden">
         {currentView === 'dashboard' && <DashboardView />}
         {currentView === 'pos' && <POSView />}
-        {currentView === 'orders' && <OrdersKDSView />}
-        {(currentView === 'tables' || currentView === 'reservations') && <TablesView />}
         {(currentView === 'products' ||
           currentView === 'categories' ||
           currentView === 'ingredients' ||
@@ -120,21 +99,12 @@ const AppContent: React.FC = () => {
         {(currentView === 'hr' ||
           currentView === 'employees' ||
           currentView === 'attendance' ||
-          currentView === 'planning' ||
-          currentView === 'leaves' ||
-          currentView === 'payroll' ||
-          currentView === 'performance') && <HRView />}
+          currentView === 'planning') && <HRView />}
         {currentView === 'expenses' && <ExpensesView />}
         {currentView === 'reports' && <ReportsView />}
         {(currentView === 'journal' || currentView === 'alerts') && <JournalView />}
       </main>
 
-      {/* PIN Authentication Modal */}
-      <PinAuthModal
-        isOpen={isPinModalOpen}
-        onClose={() => setIsPinModalOpen(false)}
-        onSuccess={() => setIsPinModalOpen(false)}
-      />
     </div>
   );
 };

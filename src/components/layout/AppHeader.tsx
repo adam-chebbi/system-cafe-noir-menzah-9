@@ -22,7 +22,7 @@ export const AppHeader: React.FC = () => {
     pendingOrdersCount
   } = useSystem();
 
-  const { currentUser, setIsPinModalOpen } = useAuth();
+  const { currentUser } = useAuth();
 
   // Dropdown state for notifications
   const [isAlertsDropdownOpen, setIsAlertsDropdownOpen] = useState(false);
@@ -377,7 +377,7 @@ export const AppHeader: React.FC = () => {
         {/* Minimalist User Avatar: Single Letter Pill (Click to Switch User / PIN) */}
         <button
           type="button"
-          onClick={() => setIsPinModalOpen(true)}
+          aria-disabled="true"
           className="w-8 h-8 rounded-full bg-[#252A27] text-[#A4DEC2] text-xs font-black flex items-center justify-center cursor-pointer shadow-2xs border border-[#252A27] hover:ring-2 hover:ring-[#8BCFAE] hover:scale-105 active:scale-95 transition-all"
           title={`${currentUser?.name || 'Utilisateur'} (${
             currentUser?.role === 'admin' ? 'Manager' : currentUser?.role || 'Staff'

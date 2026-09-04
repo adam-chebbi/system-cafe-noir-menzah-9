@@ -1,7 +1,7 @@
 import {
   User, Space, Table, Reservation, PlanElement, TableHistoryItem, Category, Ingredient, TechnicalRecipe,
   Product, Order, Sale, StockMovement, StockWaste, InventoryAudit, StockLot, StockZone,
-  Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, IngredientPurchaseHistoryEntry, ProductLabelMapping, Expense, Shift, AttendanceRecord,
+  Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, IngredientPurchaseHistoryEntry, ProductLabelMapping, Expense, ExpenseCategory, Shift, AttendanceRecord,
   LeaveRequest, PayrollRecord, SystemAlert, JournalEntry, CashRegisterSession, CashMovement,
   TheoreticalConsumptionReport, IngredientTheoreticalStock
 } from '../types/index';
@@ -510,6 +510,18 @@ export const api = {
     body: JSON.stringify({ ...updates, performedBy })
   }),
   deleteExpense: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/expenses/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+  getExpenseCategories: () => fetchJson<ExpenseCategory[]>('/api/expense-categories'),
+  createExpenseCategory: (name: string, performedBy: string) => fetchJson<ExpenseCategory>('/api/expense-categories', {
+    method: 'POST',
+    body: JSON.stringify({ name, performedBy })
+  }),
+  updateExpenseCategory: (id: string, updates: { name?: string; active?: boolean }, performedBy: string) => fetchJson<ExpenseCategory>(`/api/expense-categories/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...updates, performedBy })
+  }),
+  deleteExpenseCategory: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/expense-categories/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
     method: 'DELETE'
   }),
 
