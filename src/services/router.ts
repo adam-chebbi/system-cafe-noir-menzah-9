@@ -44,7 +44,7 @@ const VIEW_PARAM_MAP: Record<string, ViewMode> = {
   finance: 'reports',
   journal: 'journal',
   logs: 'journal',
-  alerts: 'journal',
+  alerts: 'alerts',
   public: 'public_website',
   public_site: 'public_website',
   public_website: 'public_website',
@@ -70,7 +70,8 @@ const VIEW_ALIAS_DEFAULTS: Partial<Record<ViewMode, { view: ViewMode; subTab?: s
   leaves: { view: 'hr', subTab: 'leaves' },
   payroll: { view: 'hr', subTab: 'payroll' },
   performance: { view: 'hr', subTab: 'performance' },
-  alerts: { view: 'journal', subTab: 'admin' },
+  alerts: { view: 'reports', subTab: 'alerts' },
+  journal: { view: 'reports', subTab: 'journal' },
   public_site: { view: 'public_website' }
 };
 

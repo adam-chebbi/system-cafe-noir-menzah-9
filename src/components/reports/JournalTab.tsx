@@ -6,19 +6,11 @@ import { CopyLinkButton } from '../common/CopyLinkButton';
 import {
   FileText,
   Search,
-  CheckCircle2,
-  AlertTriangle,
-  Clock,
-  User,
-  ShoppingBag,
-  Boxes,
-  Truck,
-  DollarSign,
-  ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 
-export const JournalView: React.FC = () => {
+export const JournalTab: React.FC = () => {
   const {
     globalVersion,
     currentSubTab,
@@ -31,18 +23,16 @@ export const JournalView: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedLog, setSelectedLog] = useState<JournalLog | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
   const hasValidatedIdRef = useRef(false);
 
   useEffect(() => {
-    if (currentSubTab) {
+    if (currentSubTab && currentSubTab !== 'journal') {
       setSelectedCategory(currentSubTab);
     }
   }, [currentSubTab]);
 
   const loadLogs = async () => {
     try {
-      setLoading(true);
       const data = await api.getJournalLogs();
       const safeData = Array.isArray(data) ? data : [];
       setLogs(safeData);
@@ -56,15 +46,11 @@ export const JournalView: React.FC = () => {
           if (safeData.length > 0) setSelectedLog(safeData[0]);
         }
         hasValidatedIdRef.current = true;
-      } else {
-        if (safeData.length > 0 && !selectedLog) {
-          setSelectedLog(safeData[0]);
-        }
+      } else if (safeData.length > 0 && !selectedLog) {
+        setSelectedLog(safeData[0]);
       }
     } catch (err) {
       console.error('Failed to load journal logs:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -79,14 +65,14 @@ export const JournalView: React.FC = () => {
     const matchesSearch =
       (l.action || '').toLowerCase().includes(q) ||
       (l.details || '').toLowerCase().includes(q) ||
-      ((l.userName || (l as any).performedBy || '')).toLowerCase().includes(q);
+      (l.performedBy || '').toLowerCase().includes(q);
     return matchesCat && matchesSearch;
   });
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden bg-[#F7F7F5]">
+    <div className="h-[calc(100vh-13.5rem)] min-h-[420px] flex flex-col overflow-hidden bg-[#F7F7F5] rounded-2xl border border-[#D9DDD8] animate-in fade-in duration-150">
       {/* Top Header & Sub-bar */}
-      <div className="bg-[#F2F3F0] border-b border-[#D9DDD8] px-4 py-2.5 shrink-0">
+      <div className="bg-[#F2F3F0] border-b border-[#D9DDD8] px-4 py-2.5 shrink-0 rounded-t-2xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg bg-[#252A27] text-[#A4DEC2] flex items-center justify-center">
@@ -94,23 +80,23 @@ export const JournalView: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h1 className="font-serif font-black text-base text-[#252A27]">
+                <h2 className="font-serif font-black text-base text-[#252A27]">
                   Journal d'Activité & Traçabilité
-                </h1>
+                </h2>
                 <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-md bg-[#ECEEEA] text-[#555D58] border border-[#D9DDD8]">
                   {logs.length} événements
                 </span>
               </div>
               <p className="text-[11px] text-[#555D58]">
-                Audit immuable de toutes les opérations, ventes, stocks et transactions
+                Date, heure, utilisateur, module et action de chaque opération importante
               </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="text-[11px] text-[#555D58] flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
-              Journal certifié conforme
+            <span className="text-[11px] text-[#555D58] flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-[#D9DDD8]">
+              <Lock className="w-3.5 h-3.5 text-emerald-700" />
+              Lecture seule — aucune modification possible
             </span>
           </div>
         </div>
@@ -120,11 +106,11 @@ export const JournalView: React.FC = () => {
           <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar">
             {[
               { id: 'all', label: 'Tous' },
-              { id: 'orders', label: 'Commandes' },
+              { id: 'sales', label: 'Ventes' },
               { id: 'stock', label: 'Stock & Pertes' },
-              { id: 'finance', label: 'Caisse & Ventes' },
-              { id: 'suppliers', label: 'Fournisseurs' },
-              { id: 'hr', label: 'RH & Présence' }
+              { id: 'finance', label: 'Finances' },
+              { id: 'hr', label: 'RH & Présence' },
+              { id: 'admin', label: 'Administration' }
             ].map(c => (
               <button
                 key={c.id}
@@ -187,16 +173,16 @@ export const JournalView: React.FC = () => {
                     </div>
                     <p className="text-[11px] text-[#555D58] mt-0.5 line-clamp-1">{log.details}</p>
                     <p className="text-[10px] text-[#555D58]/80 mt-0.5">
-                      Par <strong className="text-[#252A27] font-semibold">{log.userName}</strong>
+                      Par <strong className="text-[#252A27] font-semibold">{log.performedBy}</strong>
                     </p>
                   </div>
 
                   <div className="text-right shrink-0">
                     <span className="font-mono text-[10px] text-[#555D58] block">
-                      {new Date(log.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(log.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     <span className="font-mono text-[10px] text-[#555D58]/70 block">
-                      {new Date(log.timestamp).toLocaleDateString('fr-FR')}
+                      {new Date(log.createdAt).toLocaleDateString('fr-FR')}
                     </span>
                   </div>
                 </div>
@@ -217,11 +203,11 @@ export const JournalView: React.FC = () => {
                   <h3 className="font-serif font-black text-base text-[#252A27]">
                     {selectedLog.action}
                   </h3>
-                  <span className="text-xs text-[#555D58]">Catégorie : {selectedLog.category}</span>
+                  <span className="text-xs text-[#555D58]">Module : {selectedLog.category}</span>
                 </div>
                 <CopyLinkButton
-                  view="journal"
-                  subTab={selectedCategory !== 'all' ? selectedCategory : undefined}
+                  view="reports"
+                  subTab={selectedCategory !== 'all' ? selectedCategory : 'journal'}
                   id={selectedLog.id}
                   iconOnly
                 />
@@ -235,24 +221,39 @@ export const JournalView: React.FC = () => {
                   </p>
                 </div>
 
+                {(selectedLog.previousValue || selectedLog.newValue) && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#555D58] block">Valeur précédente</span>
+                      <p className="text-[#252A27] bg-rose-50 border border-rose-200 p-2 rounded-lg mt-1 text-[11px]">
+                        {selectedLog.previousValue || '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#555D58] block">Nouvelle valeur</span>
+                      <p className="text-[#252A27] bg-emerald-50 border border-emerald-200 p-2 rounded-lg mt-1 text-[11px]">
+                        {selectedLog.newValue || '—'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-[#555D58]">Opérateur</span>
-                    <p className="font-semibold text-[#252A27] mt-0.5">{selectedLog.userName}</p>
+                    <span className="text-[10px] uppercase font-bold text-[#555D58]">Utilisateur</span>
+                    <p className="font-semibold text-[#252A27] mt-0.5">{selectedLog.performedBy}</p>
                   </div>
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-[#555D58]">Horodatage</span>
+                    <span className="text-[10px] uppercase font-bold text-[#555D58]">Date & heure</span>
                     <p className="font-mono text-xs text-[#252A27] mt-0.5">
-                      {new Date(selectedLog.timestamp).toLocaleString('fr-FR')}
+                      {new Date(selectedLog.createdAt).toLocaleString('fr-FR')}
                     </p>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-[#ECEEEA]">
-                  <span className="text-[10px] uppercase font-bold text-[#555D58]">Identifiant Hash Log</span>
-                  <p className="font-mono text-[10px] text-[#555D58] break-all mt-0.5">
-                    {selectedLog.id}
-                  </p>
+                <div className="pt-2 border-t border-[#ECEEEA] flex items-center gap-1.5 text-[10px] text-[#555D58]">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Entrée immuable — identifiant {selectedLog.id}</span>
                 </div>
               </div>
             </div>

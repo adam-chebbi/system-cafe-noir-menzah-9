@@ -1,10 +1,11 @@
 import { db } from '../db/database.js';
+import { AlertService } from './alertService.js';
 
 export class ReportService {
   /**
    * Helper: Calculate start and end date ranges for current and previous period
    */
-  private static getDateRanges(period: 'today' | 'yesterday' | 'week' | 'month' | 'custom', customStart?: string, customEnd?: string) {
+  private static getDateRanges(period: 'today' | 'yesterday' | 'week' | 'month' | 'specific_month' | 'custom', customStart?: string, customEnd?: string) {
     const now = new Date();
     let curStart: Date;
     let curEnd: Date;
@@ -32,6 +33,17 @@ export class ReportService {
       // Previous month
       prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
       prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    } else if (period === 'specific_month') {
+      // customStart carries "YYYY-MM" — used by the monthly report to compare a given calendar
+      // month (past or in progress) against the calendar month immediately preceding it.
+      const [yearStr, monthStr] = (customStart || '').split('-');
+      const year = parseInt(yearStr, 10) || now.getFullYear();
+      const monthIndex = (parseInt(monthStr, 10) || now.getMonth() + 1) - 1;
+      curStart = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+      const fullMonthEnd = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
+      curEnd = fullMonthEnd.getTime() > now.getTime() ? now : fullMonthEnd;
+      prevStart = new Date(year, monthIndex - 1, 1, 0, 0, 0, 0);
+      prevEnd = new Date(year, monthIndex, 0, 23, 59, 59, 999);
     } else {
       // Custom
       curStart = customStart ? new Date(customStart) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -58,7 +70,7 @@ export class ReportService {
    * Get comprehensive dashboard analytics
    */
   public static getDashboardAnalytics(params?: {
-    period?: 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+    period?: 'today' | 'yesterday' | 'week' | 'month' | 'specific_month' | 'custom';
     startDate?: string;
     endDate?: string;
   }) {
@@ -73,8 +85,8 @@ export class ReportService {
     const recipes = db.get('recipes') || [];
     const products = db.get('products') || [];
     const categories = db.get('categories') || [];
-    const alerts = db.get('alerts') || [];
     const wastes = db.get('stockWastes') || [];
+    const inventoryAudits = db.get('inventoryAudits') || [];
 
     const now = new Date();
     const todayStartStr = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -191,6 +203,21 @@ export class ReportService {
     });
     const wasteCost = curWastes.reduce((sum: number, w: any) => sum + (w.estimatedCost || 0), 0);
 
+    // 7bis. Écarts d'inventaire constatés sur la période (audits validés uniquement)
+    const periodInventoryAudits = inventoryAudits.filter((a: any) => {
+      if (a.status !== 'validated') return false;
+      const d = new Date(a.validatedAt || a.date).getTime();
+      return d >= curStart.getTime() && d <= curEnd.getTime();
+    });
+    const inventoryDiscrepancies = periodInventoryAudits.map((a: any) => ({
+      auditNumber: a.auditNumber,
+      date: a.date,
+      totalDifferenceValue: Number(a.totalDifferenceValue.toFixed(3))
+    }));
+    const totalInventoryDiscrepancyValue = Number(
+      periodInventoryAudits.reduce((sum: number, a: any) => sum + a.totalDifferenceValue, 0).toFixed(3)
+    );
+
     const grossMargin = Math.max(0, netRevenueHT - totalCogs);
     const grossMarginPercentage = netRevenueHT > 0 ? Number(((grossMargin / netRevenueHT) * 100).toFixed(1)) : 0;
     const netOperatingProfit = Number((grossMargin - totalExpenses - totalStaffCost - wasteCost).toFixed(3));
@@ -256,6 +283,24 @@ export class ReportService {
     const topRevenueProducts = [...activeSoldProducts].sort((a, b) => b.revenue - a.revenue).slice(0, 5);
     const topMarginProducts = [...activeSoldProducts].sort((a, b) => b.margin - a.margin).slice(0, 5);
 
+    // 8bis. Produits à faible marge : marge réelle de la fiche technique sous l'objectif fixé par l'administrateur
+    const recipesByProductId = new Map(recipes.map((r: any) => [r.productId, r]));
+    const lowMarginProducts = products
+      .filter((p: any) => p.available)
+      .map((p: any) => {
+        const recipe = recipesByProductId.get(p.id);
+        if (!recipe || recipe.actualMarginPercentage === undefined) return null;
+        return {
+          name: p.name,
+          targetMarginPercentage: recipe.targetMarginPercentage,
+          actualMarginPercentage: recipe.actualMarginPercentage,
+          gap: Number((recipe.targetMarginPercentage - recipe.actualMarginPercentage).toFixed(1))
+        };
+      })
+      .filter((p: any): p is NonNullable<typeof p> => !!p && p.gap > 0)
+      .sort((a: any, b: any) => b.gap - a.gap)
+      .slice(0, 5);
+
     // 9. Répartition par Mode de Paiement (Espèces, TPE, Ticket restaurant)
     const normalizeMethod = (m?: string) => {
       const s = (m || '').toLowerCase();
@@ -320,8 +365,18 @@ export class ReportService {
       }
     }
 
-    // 12. Principales alertes actives
-    const activeAlerts = alerts.filter((a: any) => !a.read).slice(0, 6);
+    // 12. Alertes actives non traitées (calculées à la lecture, jamais stockées)
+    const activeAlerts = AlertService.getActiveAlerts().filter(a => !a.read);
+
+    // Répartition du CA de la période par catégorie de produit
+    const categoryBreakdown = Object.values(
+      activeSoldProducts.reduce((acc: Record<string, { name: string; revenue: number }>, p) => {
+        const cat = p.category || 'Autre';
+        if (!acc[cat]) acc[cat] = { name: cat, revenue: 0 };
+        acc[cat].revenue += p.revenue;
+        return acc;
+      }, {})
+    ).sort((a: any, b: any) => b.revenue - a.revenue);
 
     return {
       period,
@@ -350,13 +405,16 @@ export class ReportService {
         netOperatingProfit,
         netMarginPercentage,
         totalTva: Number(totalTva.toFixed(3)),
-        totalCogs: Number(totalCogs.toFixed(3))
+        totalCogs: Number(totalCogs.toFixed(3)),
+        wasteLosses: Number(wasteCost.toFixed(3)),
+        totalInventoryDiscrepancyValue
       },
       rankings: {
         topSellingProducts,
         flopSellingProducts,
         topRevenueProducts,
-        topMarginProducts
+        topMarginProducts,
+        lowMarginProducts
       },
       breakdowns: {
         paymentMethods,
@@ -366,7 +424,25 @@ export class ReportService {
         isHourly,
         timeSeriesData
       },
-      alerts: activeAlerts
+      inventoryDiscrepancies,
+      alerts: activeAlerts,
+      // Champs à plat, alignés sur la maquette du compte de résultat et des exports.
+      pnl: {
+        grossRevenueTTC: Number(totalRevenue.toFixed(3)),
+        netRevenueHT: Number(netRevenueHT.toFixed(3)),
+        tvaCollected: Number(totalTva.toFixed(3)),
+        cogsFoodCost: Number(totalCogs.toFixed(3)),
+        grossMargin: Number(grossMargin.toFixed(3)),
+        grossMarginPercent: grossMarginPercentage,
+        payrollCosts: Number(totalStaffCost.toFixed(3)),
+        operatingExpenses: Number(totalExpenses.toFixed(3)),
+        wasteLosses: Number(wasteCost.toFixed(3)),
+        netOperatingProfit,
+        netMarginPercent: netMarginPercentage
+      },
+      categoryBreakdown,
+      topProducts: topSellingProducts,
+      lowMarginProducts
     };
   }
 
@@ -395,5 +471,24 @@ export class ReportService {
       startDate: new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString(),
       endDate: new Date().toISOString()
     });
+  }
+
+  /**
+   * Assemble le rapport mensuel complet (CA, évolution, tickets, achats, dépenses, personnel,
+   * marge, valeur de stock, pertes, écarts d'inventaire, top produits, produits à faible marge et
+   * alertes principales) pour un mois donné (par défaut le mois en cours).
+   */
+  public static getMonthlyReport(monthStr?: string) {
+    const now = new Date();
+    const resolvedMonth = monthStr && /^\d{4}-\d{2}$/.test(monthStr)
+      ? monthStr
+      : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const analytics = this.getDashboardAnalytics({ period: 'specific_month', startDate: resolvedMonth });
+
+    const [year, month] = resolvedMonth.split('-').map(Number);
+    const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+    return { ...analytics, month: resolvedMonth, monthLabel };
   }
 }

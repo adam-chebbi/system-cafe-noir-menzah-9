@@ -1,5 +1,13 @@
 import { db } from '../db/database.js';
 import { Expense, ExpenseCategory } from '../types/index.js';
+import { summarizeChanges } from '../utils/audit.js';
+
+const EXPENSE_TRACKED_FIELDS = [
+  { key: 'title', label: 'Intitulé' },
+  { key: 'amount', label: 'Montant', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'category', label: 'Catégorie' },
+  { key: 'paymentStatus', label: 'Statut', format: (v: string) => (v === 'paid' ? 'Payée' : 'En attente') }
+];
 
 export class ExpenseService {
   public static getExpenses(): Expense[] {
@@ -55,9 +63,11 @@ export class ExpenseService {
     const expenses = db.get('expenses') || [];
     const idx = expenses.findIndex(e => e && e.id === id);
     if (idx === -1) throw new Error('Dépense non trouvée');
-    expenses[idx] = { ...expenses[idx], ...updates };
+    const before = expenses[idx];
+    expenses[idx] = { ...before, ...updates };
     db.set('expenses', expenses);
-    db.logAudit('Mise à jour Dépense', 'finance', `Modification dépense ${expenses[idx].expenseNumber}`, performedBy);
+    const changes = summarizeChanges(before, expenses[idx], EXPENSE_TRACKED_FIELDS);
+    db.logAudit('Mise à jour Dépense', 'finance', `Modification dépense ${expenses[idx].expenseNumber}`, performedBy, changes);
     return expenses[idx];
   }
 

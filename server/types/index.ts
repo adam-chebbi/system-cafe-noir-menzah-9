@@ -661,15 +661,21 @@ export interface Expense {
   retroNotes?: string;
 }
 
+/**
+ * Computed live from current data at read time — never persisted. An alert reflects the state of
+ * the platform right now, so it appears and disappears on its own as the underlying issue is
+ * created or resolved (e.g. restocking clears a low-stock alert automatically).
+ */
 export interface SystemAlert {
+  /** Deterministic (type + source record), so a dismissal survives recomputation. */
   id: string;
-  type: 'new_qr_order' | 'low_stock' | 'table_bill_requested' | 'table_help' | 'inventory_discrepancy' | 'invoice_due' | 'system_event' | 'negative_stock' | 'lot_expiring' | 'lot_expired';
+  type: 'low_stock' | 'negative_stock' | 'lot_expiring' | 'lot_expired' | 'ocr_review' | 'invoice_due' | 'inventory_discrepancy' | 'margin_below_target';
   title: string;
   message: string;
   severity: 'info' | 'warning' | 'critical' | 'success';
+  /** True once the administrator has dismissed this alert (see AppSettings.dismissedAlertIds). */
   read: boolean;
   linkUrl?: string;
-  metadata?: Record<string, any>;
   createdAt: string;
 }
 
@@ -681,7 +687,9 @@ export interface JournalEntry {
   performedBy: string;
   userId?: string;
   ipAddress?: string;
-  metadata?: Record<string, any>;
+  /** Compact human-readable snapshot of the field(s) that changed — set only when relevant. */
+  previousValue?: string;
+  newValue?: string;
   createdAt: string;
 }
 
@@ -791,7 +799,6 @@ export interface DatabaseSchema {
   expenses: Expense[];
   expenseCategories: ExpenseCategory[];
   attendances: AttendanceRecord[];
-  alerts: SystemAlert[];
   journal: JournalEntry[];
   cashRegisters: CashRegisterSession[];
   cashMovements: CashMovement[];

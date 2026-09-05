@@ -1,6 +1,14 @@
 import { db } from '../db/database.js';
 import { Category, Product, TechnicalRecipe, Ingredient } from '../types/index.js';
 import { computeIngredientLineCost, formatApproxQuantity, RangeCalcMode } from './unitConversion.js';
+import { summarizeChanges } from '../utils/audit.js';
+
+const PRODUCT_TRACKED_FIELDS = [
+  { key: 'name', label: 'Nom' },
+  { key: 'price', label: 'Prix', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'tvaRate', label: 'TVA', format: (v: number) => `${v}%` },
+  { key: 'available', label: 'Disponible' }
+];
 
 
 export class CatalogService {
@@ -100,9 +108,11 @@ export class CatalogService {
     const products = db.get('products') || [];
     const idx = products.findIndex(p => p && p.id === id);
     if (idx === -1) throw new Error('Produit non trouvé');
-    products[idx] = { ...products[idx], ...updates };
+    const before = products[idx];
+    products[idx] = { ...before, ...updates };
     db.set('products', products);
-    db.logAudit('Mise à jour Produit', 'admin', `Modification du produit ${products[idx].name}`, performedBy);
+    const changes = summarizeChanges(before, products[idx], PRODUCT_TRACKED_FIELDS);
+    db.logAudit('Mise à jour Produit', 'admin', `Modification du produit ${products[idx].name}`, performedBy, changes);
     return products[idx];
   }
 

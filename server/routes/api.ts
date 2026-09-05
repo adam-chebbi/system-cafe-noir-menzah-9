@@ -10,6 +10,7 @@ import { SalesService } from '../services/salesService.js';
 import { SupplierService } from '../services/supplierService.js';
 import { ProductMappingService } from '../services/productMappingService.js';
 import { HRService } from '../services/hrService.js';
+import { AlertService } from '../services/alertService.js';
 import { ExpenseService } from '../services/expenseService.js';
 import { ReportService } from '../services/reportService.js';
 import { DeterministicOcrService } from '../services/deterministicOcrService.js';
@@ -1191,28 +1192,37 @@ router.get('/reports/financial', (req, res) => {
   }
 });
 
-// --- ALERTS & JOURNAL ---
-router.get('/alerts', (req, res) => {
-  res.json(db.get('alerts'));
+router.get('/reports/monthly', (req, res) => {
+  try {
+    const month = (req.query.month as string) || undefined;
+    const report = ReportService.getMonthlyReport(month);
+    res.json(report);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- ALERTS (calculées à la lecture) & JOURNAL (lecture seule) ---
+router.get('/alerts', (_req, res) => {
+  res.json(AlertService.getActiveAlerts());
 });
 
 router.patch('/alerts/:id/read', (req, res) => {
-  const alerts = db.get('alerts');
-  const alert = alerts.find(a => a.id === req.params.id);
-  if (alert) {
-    alert.read = true;
-    db.set('alerts', alerts);
-  }
+  AlertService.dismiss(req.params.id);
+  res.json({ success: true });
+});
+
+router.post('/alerts/:id/restore', (req, res) => {
+  AlertService.restore(req.params.id);
   res.json({ success: true });
 });
 
 router.post('/alerts/read-all', (req, res) => {
-  const alerts = db.get('alerts');
-  alerts.forEach(a => a.read = true);
-  db.set('alerts', alerts);
+  AlertService.dismissAll();
   res.json({ success: true });
 });
 
+// Journal d'activité : aucune route PATCH/DELETE n'existe — la traçabilité est immuable.
 router.get('/journal', (req, res) => {
   res.json(db.get('journal'));
 });
@@ -1224,7 +1234,7 @@ router.get('/settings', (_req, res) => {
 
 router.patch('/settings', (req, res) => {
   try {
-    const allowed: (keyof AppSettings)[] = ['recipeRangeCalcMode', 'defaultExpiryAlertLeadDays'];
+    const allowed: (keyof AppSettings)[] = ['recipeRangeCalcMode', 'defaultExpiryAlertLeadDays', 'significantDiscrepancyThresholdDT'];
     const updates: Partial<AppSettings> = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {

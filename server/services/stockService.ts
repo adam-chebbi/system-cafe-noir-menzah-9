@@ -1,11 +1,18 @@
 import { db } from '../db/database.js';
 import { Ingredient, StockMovement, StockWaste, InventoryAudit, StockLot, StockZone } from '../types/index.js';
 import { CatalogService } from './catalogService.js';
+import { summarizeChanges } from '../utils/audit.js';
 
 export const ZONE_LABELS: Record<StockZone, string> = {
   reserve_principale: 'Réserve principale',
   depot: 'Dépôt'
 };
+
+const INGREDIENT_TRACKED_FIELDS = [
+  { key: 'name', label: 'Nom' },
+  { key: 'costPerUnit', label: 'Coût unitaire', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'minStockThreshold', label: 'Seuil minimal' }
+];
 
 export const WASTE_REASON_LABELS: Record<StockWaste['reason'], string> = {
   perte: 'Perte',
@@ -64,56 +71,6 @@ export class StockService {
     return (baseQty * costBefore + receivedQty * receivedCost) / denom;
   }
 
-  private static alertNegativeStock(ing: Ingredient, zone: StockZone, newZoneStock: number, context: string): void {
-    if (newZoneStock >= 0) return;
-    db.createAlert(
-      'negative_stock',
-      `Stock négatif : ${ing.name}`,
-      `Le stock en ${ZONE_LABELS[zone]} est passé à ${newZoneStock} ${ing.unit} suite à ${context}.`,
-      'critical',
-      '/stock',
-      { ingredientId: ing.id, zone }
-    );
-  }
-
-  private static alertLowStockIfNeeded(ing: Ingredient): void {
-    if (ing.currentStock <= ing.minStockThreshold) {
-      db.createAlert(
-        'low_stock',
-        `Seuil de stock bas : ${ing.name}`,
-        `Stock actuel: ${ing.currentStock} ${ing.unit} (Seuil minimal: ${ing.minStockThreshold} ${ing.unit})`,
-        'warning',
-        '/stock',
-        { ingredientId: ing.id }
-      );
-    }
-  }
-
-  private static evaluateAndAlertLotExpiry(lot: StockLot, ingredient: Ingredient): void {
-    if (!lot.expirationDate) return;
-    const leadDays = ingredient.expiryAlertLeadDays ?? db.getSettings().defaultExpiryAlertLeadDays;
-    const daysUntilExpiry = Math.ceil((new Date(lot.expirationDate).getTime() - Date.now()) / 86400000);
-    if (daysUntilExpiry < 0) {
-      db.createAlert(
-        'lot_expired',
-        `Lot périmé : ${ingredient.name}`,
-        `Le lot ${lot.lotNumber} (${lot.quantity} ${lot.unit}) est périmé depuis le ${lot.expirationDate}.`,
-        'critical',
-        '/stock',
-        { ingredientId: ingredient.id, lotId: lot.id }
-      );
-    } else if (daysUntilExpiry <= leadDays) {
-      db.createAlert(
-        'lot_expiring',
-        `Péremption proche : ${ingredient.name}`,
-        `Le lot ${lot.lotNumber} (${lot.quantity} ${lot.unit}) expire le ${lot.expirationDate} (dans ${daysUntilExpiry} j).`,
-        'warning',
-        '/stock',
-        { ingredientId: ingredient.id, lotId: lot.id }
-      );
-    }
-  }
-
   public static createIngredient(data: Omit<Ingredient, 'id' | 'updatedAt'>, performedBy: string): Ingredient {
     const ingredients = db.get('ingredients');
     const stockByZone: Record<StockZone, number> = data.stockByZone && (data.stockByZone.reserve_principale || data.stockByZone.depot)
@@ -159,7 +116,8 @@ export class StockService {
     ingredients[index] = updated;
     db.set('ingredients', ingredients);
 
-    db.logAudit('Mise à jour Ingrédient', 'stock', `Modification de ${updated.name}`, performedBy);
+    const changes = summarizeChanges(existing, updated, INGREDIENT_TRACKED_FIELDS);
+    db.logAudit('Mise à jour Ingrédient', 'stock', `Modification de ${updated.name}`, performedBy, changes);
 
     if (updated.costPerUnit !== existing.costPerUnit) {
       CatalogService.recalculateRecipesForIngredient(id, performedBy);
@@ -227,9 +185,6 @@ export class StockService {
         createdAt: new Date().toISOString()
       };
       movements.unshift(movement);
-
-      this.alertLowStockIfNeeded(ing);
-      this.alertNegativeStock(ing, zone, newZoneStock, 'une vente');
     }
 
     db.set('ingredients', ingredients);
@@ -330,10 +285,6 @@ export class StockService {
       CatalogService.recalculateRecipesForIngredient(ingredientId, performedBy);
     }
 
-    if (createdLot) {
-      this.evaluateAndAlertLotExpiry(createdLot, ing);
-    }
-
     return movement;
   }
 
@@ -379,8 +330,6 @@ export class StockService {
     db.set('ingredients', ingredients);
     db.set('stockMovements', movements);
     db.logAudit('Retrait de Stock (correction)', 'stock', `Retrait de ${quantity} ${ing.unit} pour ${ing.name} en ${ZONE_LABELS[zone]} : ${reason}`, performedBy);
-
-    this.alertNegativeStock(ing, zone, newZoneStock, 'une correction de stock');
 
     return movement;
   }
@@ -489,8 +438,6 @@ export class StockService {
     db.set('stockMovements', movements);
     db.logAudit('Transfert de Stock', 'stock', `Transfert de ${quantity} ${ing.unit} de ${ing.name} : ${ZONE_LABELS[fromZone]} → ${ZONE_LABELS[toZone]}`, performedBy);
 
-    this.alertNegativeStock(ing, fromZone, newFromStock, 'un transfert');
-
     return { out: outMovement, in: inMovement };
   }
 
@@ -543,8 +490,6 @@ export class StockService {
         movements.unshift(movement);
         db.set('ingredients', ingredients);
         db.set('stockMovements', movements);
-
-        this.alertNegativeStock(ing, zone, newZoneStock, 'une perte');
       }
     }
 
@@ -593,8 +538,6 @@ export class StockService {
         createdAt: new Date().toISOString()
       };
       movements.unshift(movement);
-
-      this.alertNegativeStock(ing, item.zone, item.countedStock, `la validation de l'inventaire ${auditNumber}`);
     }
 
     db.set('ingredients', ingredients);
@@ -762,8 +705,6 @@ export class StockService {
     db.set('stockMovements', movements);
     db.logAudit('Correction Mouvement Stock', 'stock', `Écriture correctrice pour ${ing.name} (${inverseQty > 0 ? '+' : ''}${inverseQty} ${ing.unit}, ${ZONE_LABELS[zone]}) : ${reason}`, performedBy);
 
-    this.alertNegativeStock(ing, zone, newZoneStock, 'une correction');
-
     return compensatingMovement;
   }
 
@@ -802,9 +743,6 @@ export class StockService {
     lots.unshift(lot);
     db.set('stockLots', lots);
     db.logAudit('Création Lot', 'stock', `Lot ${lot.lotNumber} créé pour ${lot.ingredientName} (${lot.quantity} ${lot.unit})`, performedBy);
-
-    const ing = this.getIngredientById(lot.ingredientId);
-    if (ing) this.evaluateAndAlertLotExpiry(lot, ing);
 
     return lot;
   }

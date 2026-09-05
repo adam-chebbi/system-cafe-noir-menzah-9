@@ -11,6 +11,13 @@ export interface User {
   createdAt: string;
 }
 
+export interface AppSettings {
+  recipeRangeCalcMode: 'max' | 'median' | 'min';
+  defaultExpiryAlertLeadDays: number;
+  /** Écart net (DT) à partir duquel un inventaire validé déclenche une alerte "écart significatif". */
+  significantDiscrepancyThresholdDT: number;
+}
+
 /** Employee HR record. Never a login account — this application has a single administrator identity (see User). */
 export interface EmployeeRecord {
   id: string;
@@ -719,15 +726,15 @@ export interface Expense {
   retroNotes?: string;
 }
 
+/** Computed live at read time — never persisted. Appears/disappears automatically as data changes. */
 export interface SystemAlert {
   id: string;
-  type: 'new_qr_order' | 'low_stock' | 'table_bill_requested' | 'table_help' | 'inventory_discrepancy' | 'invoice_due' | 'system_event' | 'negative_stock' | 'lot_expiring' | 'lot_expired';
+  type: 'low_stock' | 'negative_stock' | 'lot_expiring' | 'lot_expired' | 'ocr_review' | 'invoice_due' | 'inventory_discrepancy' | 'margin_below_target';
   title: string;
   message: string;
   severity: 'info' | 'warning' | 'critical' | 'success';
   read: boolean;
   linkUrl?: string;
-  metadata?: Record<string, any>;
   createdAt: string;
 }
 
@@ -739,7 +746,8 @@ export interface JournalEntry {
   performedBy: string;
   userId?: string;
   ipAddress?: string;
-  metadata?: Record<string, any>;
+  previousValue?: string;
+  newValue?: string;
   createdAt: string;
 }
 

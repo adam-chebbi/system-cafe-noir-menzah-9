@@ -24,8 +24,8 @@
       "baseSalary": 950,
       "cinNumber": "08123456",
       "cinIssueDate": "2016-05-12",
-      "createdAt": "2026-09-04T13:31:20.588Z",
-      "updatedAt": "2026-09-04T13:31:20.588Z"
+      "createdAt": "2026-09-04T15:02:41.606Z",
+      "updatedAt": "2026-09-04T15:02:41.606Z"
     },
     {
       "id": "emp_2",
@@ -37,8 +37,8 @@
       "baseSalary": 820,
       "cinNumber": "09456789",
       "cinIssueDate": "2018-02-20",
-      "createdAt": "2026-09-04T13:31:20.588Z",
-      "updatedAt": "2026-09-04T13:31:20.588Z"
+      "createdAt": "2026-09-04T15:02:41.606Z",
+      "updatedAt": "2026-09-04T15:02:41.606Z"
     }
   ],
   "personnelFinancialRecords": [
@@ -53,8 +53,8 @@
       "deductions": 0,
       "amountPaid": 1000,
       "paymentDate": "2026-08-05",
-      "createdAt": "2026-09-04T13:31:20.588Z",
-      "updatedAt": "2026-09-04T13:31:20.588Z"
+      "createdAt": "2026-09-04T15:02:41.606Z",
+      "updatedAt": "2026-09-04T15:02:41.606Z"
     },
     {
       "id": "fin_2",
@@ -67,8 +67,8 @@
       "deductions": 0,
       "amountPaid": 720,
       "paymentDate": "2026-08-05",
-      "createdAt": "2026-09-04T13:31:20.588Z",
-      "updatedAt": "2026-09-04T13:31:20.588Z"
+      "createdAt": "2026-09-04T15:02:41.606Z",
+      "updatedAt": "2026-09-04T15:02:41.606Z"
     }
   ],
   "categories": [
@@ -689,7 +689,7 @@
           "total": 2.8
         }
       ],
-      "createdAt": "2026-09-04T12:01:20.588Z"
+      "createdAt": "2026-09-04T13:32:41.606Z"
     },
     {
       "id": "sal_502",
@@ -721,7 +721,7 @@
           "total": 2.2
         }
       ],
-      "createdAt": "2026-09-04T12:46:20.588Z"
+      "createdAt": "2026-09-04T14:17:41.606Z"
     }
   ],
   "stockMovements": [
@@ -825,7 +825,7 @@
       "paymentMethod": "bank_transfer",
       "paymentStatus": "paid",
       "approvedBy": "Adam Mansour",
-      "createdAt": "2026-09-04T13:31:20.588Z"
+      "createdAt": "2026-09-04T15:02:41.606Z"
     },
     {
       "id": "exp_2",
@@ -843,7 +843,7 @@
       "paymentMethod": "direct_debit",
       "paymentStatus": "paid",
       "approvedBy": "Adam Mansour",
-      "createdAt": "2026-09-04T13:31:20.588Z"
+      "createdAt": "2026-09-04T15:02:41.606Z"
     }
   ],
   "expenseCategories": [
@@ -953,32 +953,6 @@
       "notes": "Arrivée à 10h20"
     }
   ],
-  "alerts": [
-    {
-      "id": "alt_qr_1001",
-      "type": "new_qr_order",
-      "title": "Nouvelle Commande QR - Table 7",
-      "message": "2x Flat White Velouté + 2x Croissant Pur Beurre (16.000 DT) en attente d’acceptation.",
-      "severity": "warning",
-      "read": false,
-      "linkUrl": "/orders",
-      "metadata": {
-        "orderId": "ord_1001",
-        "tableNumber": "7"
-      },
-      "createdAt": "2026-09-04T13:28:20.588Z"
-    },
-    {
-      "id": "alt_stock_1",
-      "type": "low_stock",
-      "title": "Seuil Critique Stock : Pain de Campagne",
-      "message": "Stock actuel: 8 unités (Seuil minimal: 4 unités). Réapprovisionnement suggéré.",
-      "severity": "info",
-      "read": false,
-      "linkUrl": "/stock",
-      "createdAt": "2026-09-04T11:31:20.588Z"
-    }
-  ],
   "journal": [
     {
       "id": "jrn_init",
@@ -986,7 +960,7 @@
       "category": "admin",
       "details": "Initialisation de la base de données opérationnelle Café Noir Système.",
       "performedBy": "Système",
-      "createdAt": "2026-09-04T13:31:20.588Z"
+      "createdAt": "2026-09-04T15:02:41.606Z"
     },
     {
       "id": "jrn_order_qr",
@@ -994,7 +968,7 @@
       "category": "orders",
       "details": "Commande CMD-1001 soumise depuis le QR code de la Table 7.",
       "performedBy": "Client QR (Table 7)",
-      "createdAt": "2026-09-04T13:28:20.588Z"
+      "createdAt": "2026-09-04T14:59:41.606Z"
     }
   ]
 }

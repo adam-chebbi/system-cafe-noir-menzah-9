@@ -1,9 +1,27 @@
 import { db } from '../db/database.js';
 import { Supplier, PurchaseOrder, PurchaseOrderReception, PurchaseOrderReceptionItem, SupplierInvoice, SupplierInvoicePayment, StockZone } from '../types/index.js';
 import { StockService } from './stockService.js';
+import { summarizeChanges } from '../utils/audit.js';
 
 /** Délai (jours) avant échéance à partir duquel une facture est signalée "échéance proche". */
 const INVOICE_DUE_SOON_LEAD_DAYS = 5;
+
+const SUPPLIER_TRACKED_FIELDS = [
+  { key: 'name', label: 'Nom' },
+  { key: 'active', label: 'Actif' },
+  { key: 'paymentTerms', label: 'Conditions de paiement' }
+];
+
+const PURCHASE_ORDER_TRACKED_FIELDS = [
+  { key: 'status', label: 'Statut' },
+  { key: 'totalAmount', label: 'Montant', format: (v: number) => `${v.toFixed(3)} DT` }
+];
+
+const INVOICE_TRACKED_FIELDS = [
+  { key: 'paymentStatus', label: 'Statut de paiement' },
+  { key: 'dueDate', label: 'Échéance' },
+  { key: 'totalAmount', label: 'Montant', format: (v: number) => `${v.toFixed(3)} DT` }
+];
 
 export class SupplierService {
   public static getSuppliers(): Supplier[] {
@@ -27,9 +45,11 @@ export class SupplierService {
     const suppliers = db.get('suppliers');
     const idx = suppliers.findIndex(s => s.id === id);
     if (idx === -1) throw new Error('Fournisseur non trouvé');
-    suppliers[idx] = { ...suppliers[idx], ...updates };
+    const before = suppliers[idx];
+    suppliers[idx] = { ...before, ...updates };
     db.set('suppliers', suppliers);
-    db.logAudit('Mise à jour Fournisseur', 'admin', `Modification du fournisseur ${suppliers[idx].name}`, performedBy);
+    const changes = summarizeChanges(before, suppliers[idx], SUPPLIER_TRACKED_FIELDS);
+    db.logAudit('Mise à jour Fournisseur', 'admin', `Modification du fournisseur ${suppliers[idx].name}`, performedBy, changes);
     return suppliers[idx];
   }
 
@@ -73,9 +93,11 @@ export class SupplierService {
     const idx = orders.findIndex(p => p.id === poId);
     if (idx === -1) throw new Error('Bon de commande non trouvé');
 
-    orders[idx] = { ...orders[idx], ...updates };
+    const before = orders[idx];
+    orders[idx] = { ...before, ...updates };
     db.set('purchaseOrders', orders);
-    db.logAudit('Modification Bon de Commande', 'stock', `Modification du bon ${orders[idx].orderNumber}`, performedBy);
+    const changes = summarizeChanges(before, orders[idx], PURCHASE_ORDER_TRACKED_FIELDS);
+    db.logAudit('Modification Bon de Commande', 'stock', `Modification du bon ${orders[idx].orderNumber}`, performedBy, changes);
     return orders[idx];
   }
 
@@ -223,30 +245,6 @@ export class SupplierService {
     return invoice.totalTTC || invoice.totalAmount;
   }
 
-  private static alertIfDueSoon(invoice: SupplierInvoice): void {
-    if (invoice.paymentStatus === 'paid' || invoice.cancelled) return;
-    const daysUntilDue = Math.ceil((new Date(invoice.dueDate).getTime() - Date.now()) / 86400000);
-    const total = this.invoiceTotal(invoice);
-    if (daysUntilDue < 0) {
-      db.createAlert(
-        'invoice_due',
-        `Facture en retard : ${invoice.supplierName}`,
-        `Facture ${invoice.invoiceNumber} (${total.toFixed(3)} DT) échue depuis ${Math.abs(daysUntilDue)} j.`,
-        'critical',
-        '/suppliers',
-        { invoiceId: invoice.id }
-      );
-    } else if (daysUntilDue <= INVOICE_DUE_SOON_LEAD_DAYS) {
-      db.createAlert(
-        'invoice_due',
-        `Échéance proche : ${invoice.supplierName}`,
-        `Facture ${invoice.invoiceNumber} (${total.toFixed(3)} DT) à payer avant le ${invoice.dueDate} (dans ${daysUntilDue} j).`,
-        'warning',
-        '/suppliers',
-        { invoiceId: invoice.id }
-      );
-    }
-  }
 
   /**
    * Retourne les factures avec un état d'échéance calculé à la lecture (jamais stocké) : le
@@ -315,8 +313,6 @@ export class SupplierService {
     db.set('supplierInvoices', invoices);
     db.logAudit('Enregistrement Facture Fournisseur', 'finance', `Facture ${invoice.invoiceNumber} (${invoice.supplierName} - ${invoice.totalAmount.toFixed(3)} DT)${data.isRetroactive ? ' [Historique]' : ''}`, performedBy);
 
-    this.alertIfDueSoon(invoice);
-
     return invoice;
   }
 
@@ -325,9 +321,11 @@ export class SupplierService {
     const idx = invoices.findIndex(i => i.id === invoiceId);
     if (idx === -1) throw new Error('Facture non trouvée');
 
-    invoices[idx] = { ...invoices[idx], ...updates };
+    const before = invoices[idx];
+    invoices[idx] = { ...before, ...updates };
     db.set('supplierInvoices', invoices);
-    db.logAudit('Modification Facture Fournisseur', 'finance', `Modification de la facture ${invoices[idx].invoiceNumber}`, performedBy);
+    const changes = summarizeChanges(before, invoices[idx], INVOICE_TRACKED_FIELDS);
+    db.logAudit('Modification Facture Fournisseur', 'finance', `Modification de la facture ${invoices[idx].invoiceNumber}`, performedBy, changes);
     return invoices[idx];
   }
 

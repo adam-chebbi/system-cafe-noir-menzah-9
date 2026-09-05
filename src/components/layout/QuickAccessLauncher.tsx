@@ -225,7 +225,7 @@ export const QuickAccessLauncher: React.FC = () => {
   const modules: ModuleSection[] = NAVIGATION_MODULES.map(mod => ({
     ...mod,
     shortcuts: mod.shortcuts.map(s => {
-      if (s.id === 'dash-alerts' && unreadAlertsCount > 0) {
+      if (s.id === 'reports-alerts' && unreadAlertsCount > 0) {
         return { ...s, badge: `${unreadAlertsCount}` };
       }
       if (s.id === 'kds-pending' && pendingOrdersCount > 0) {

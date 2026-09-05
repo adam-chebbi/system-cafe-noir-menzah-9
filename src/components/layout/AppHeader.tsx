@@ -19,6 +19,7 @@ export const AppHeader: React.FC = () => {
     currentAction,
     navigateTo,
     alerts,
+    unreadAlertsCount,
     pendingOrdersCount
   } = useSystem();
 
@@ -323,9 +324,9 @@ export const AppHeader: React.FC = () => {
             aria-label="Alertes opérationnelles"
           >
             <Bell className="w-4 h-4" />
-            {alerts.length > 0 && (
+            {unreadAlertsCount > 0 && (
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-rose-600 text-white text-[8px] font-bold flex items-center justify-center animate-pulse">
-                {alerts.length}
+                {unreadAlertsCount}
               </span>
             )}
           </button>
@@ -335,7 +336,7 @@ export const AppHeader: React.FC = () => {
             <div className="absolute right-0 mt-1.5 w-72 bg-[#F2F3F0] rounded-xl shadow-xl border border-[#C7CDC8] p-3 z-50 animate-in zoom-in-95">
               <div className="flex items-center justify-between pb-2 border-b border-[#D9DDD8]">
                 <span className="text-xs font-bold text-[#252A27]">
-                  Alertes Opérationnelles ({alerts.length})
+                  Alertes Opérationnelles ({unreadAlertsCount})
                 </span>
                 <button
                   type="button"
@@ -347,18 +348,22 @@ export const AppHeader: React.FC = () => {
               </div>
 
               <div className="py-1.5 max-h-60 overflow-y-auto space-y-1.5 text-xs divide-y divide-[#D9DDD8]">
-                {alerts.length === 0 ? (
+                {alerts.filter(a => !a.read).length === 0 ? (
                   <p className="text-center py-3 text-[#555D58] text-[11px]">Aucune alerte active</p>
                 ) : (
-                  alerts.map(a => (
+                  alerts.filter(a => !a.read).slice(0, 8).map(a => (
                     <div
                       key={a.id}
                       className="pt-1.5 first:pt-0 cursor-pointer hover:bg-white p-1.5 rounded-lg transition-colors"
                       onClick={() => {
                         setIsAlertsDropdownOpen(false);
-                        if (a.type === 'low_stock' || a.type === 'negative_stock') navigateTo('stock', 'inventory');
-                        if (a.type === 'lot_expiring' || a.type === 'lot_expired') navigateTo('stock', 'lots');
-                        if (a.type === 'qr_order') navigateTo('orders', 'pending_qr');
+                        if (a.type === 'low_stock' || a.type === 'negative_stock' || a.type === 'lot_expiring' || a.type === 'lot_expired' || a.type === 'inventory_discrepancy') {
+                          navigateTo('stock');
+                        } else if (a.type === 'ocr_review' || a.type === 'invoice_due') {
+                          navigateTo('suppliers');
+                        } else if (a.type === 'margin_below_target') {
+                          navigateTo('products');
+                        }
                       }}
                     >
                       <p className="font-bold text-[#252A27] flex items-center space-x-1">
@@ -370,6 +375,17 @@ export const AppHeader: React.FC = () => {
                   ))
                 )}
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAlertsDropdownOpen(false);
+                  navigateTo('reports', 'alerts');
+                }}
+                className="w-full mt-2 pt-2 border-t border-[#D9DDD8] text-center text-[11px] font-bold text-[#252A27] hover:underline cursor-pointer"
+              >
+                Gérer toutes les alertes &rarr;
+              </button>
             </div>
           )}
         </div>

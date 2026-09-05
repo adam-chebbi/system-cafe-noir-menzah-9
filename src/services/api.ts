@@ -3,7 +3,7 @@ import {
   Product, Order, Sale, StockMovement, StockWaste, InventoryAudit, StockLot, StockZone,
   Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, IngredientPurchaseHistoryEntry, ProductLabelMapping, Expense, ExpenseCategory,
   SystemAlert, JournalEntry, CashRegisterSession, CashMovement,
-  TheoreticalConsumptionReport, IngredientTheoreticalStock, EmployeeRecord, AttendanceRecord, AttendanceStatus, PersonnelFinancialRecord
+  TheoreticalConsumptionReport, IngredientTheoreticalStock, EmployeeRecord, AttendanceRecord, AttendanceStatus, PersonnelFinancialRecord, AppSettings
 } from '../types/index';
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -510,8 +510,10 @@ export const api = {
 
   // Reports, Alerts & Journal
   getFinancialReport: (days = 30) => fetchJson<any>(`/api/reports/financial?days=${days}`),
+  getMonthlyReport: (month?: string) => fetchJson<any>(`/api/reports/monthly${month ? `?month=${month}` : ''}`),
   getAlerts: () => fetchJson<SystemAlert[]>('/api/alerts'),
   markAlertRead: (id: string) => fetchJson<{ success: boolean }>(`/api/alerts/${id}/read`, { method: 'PATCH' }),
+  restoreAlert: (id: string) => fetchJson<{ success: boolean }>(`/api/alerts/${id}/restore`, { method: 'POST' }),
   markAllAlertsRead: () => fetchJson<{ success: boolean }>('/api/alerts/read-all', { method: 'POST' }),
   getJournal: () => fetchJson<JournalEntry[]>('/api/journal'),
   getJournalLogs: () => fetchJson<JournalEntry[]>('/api/journal'),
@@ -541,9 +543,9 @@ export const api = {
   },
 
   // App Settings
-  getSettings: () => fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min'; defaultExpiryAlertLeadDays: number }>('/api/settings'),
-  updateSettings: (updates: { recipeRangeCalcMode?: 'max' | 'median' | 'min'; defaultExpiryAlertLeadDays?: number }, performedBy: string) =>
-    fetchJson<{ recipeRangeCalcMode: 'max' | 'median' | 'min'; defaultExpiryAlertLeadDays: number }>('/api/settings', {
+  getSettings: () => fetchJson<AppSettings>('/api/settings'),
+  updateSettings: (updates: Partial<AppSettings>, performedBy: string) =>
+    fetchJson<AppSettings>('/api/settings', {
       method: 'PATCH',
       body: JSON.stringify({ ...updates, performedBy })
     })

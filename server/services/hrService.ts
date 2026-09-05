@@ -1,8 +1,24 @@
 import { db } from '../db/database.js';
 import { EmployeeRecord, AttendanceRecord, PersonnelFinancialRecord } from '../types/index.js';
+import { summarizeChanges } from '../utils/audit.js';
 
 const nowIso = () => new Date().toISOString();
 const generateId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+const EMPLOYEE_TRACKED_FIELDS = [
+  { key: 'position', label: 'Poste' },
+  { key: 'phone', label: 'Téléphone' },
+  { key: 'baseSalary', label: 'Salaire de base', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'active', label: 'Actif' }
+];
+
+const FINANCIAL_RECORD_TRACKED_FIELDS = [
+  { key: 'baseSalary', label: 'Salaire de base', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'advances', label: 'Avances', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'bonuses', label: 'Primes', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'deductions', label: 'Retenues', format: (v: number) => `${v.toFixed(3)} DT` },
+  { key: 'amountPaid', label: 'Montant payé', format: (v: number) => `${v.toFixed(3)} DT` }
+];
 
 /**
  * HR V1: employee records, manually-entered planning/presence and financial tracking only.
@@ -30,16 +46,16 @@ export class HRService {
     const employees = db.get('employees');
     const idx = employees.findIndex(e => e.id === id);
     if (idx === -1) throw new Error('Employé introuvable.');
-    employees[idx] = { ...employees[idx], ...updates, id, updatedAt: nowIso() };
+    const before = employees[idx];
+    employees[idx] = { ...before, ...updates, id, updatedAt: nowIso() };
     db.set('employees', employees);
-    db.logAudit('Modification employé', 'hr', `Dossier de ${employees[idx].name} modifié`, performedBy);
+    const changes = summarizeChanges(before, employees[idx], EMPLOYEE_TRACKED_FIELDS);
+    db.logAudit('Modification employé', 'hr', `Dossier de ${employees[idx].name} modifié`, performedBy, changes);
     return employees[idx];
   }
 
   public static setEmployeeActive(id: string, active: boolean, performedBy: string): EmployeeRecord {
-    const employee = this.updateEmployee(id, { active }, performedBy);
-    db.logAudit(active ? 'Réactivation employé' : 'Désactivation employé', 'hr', employee.name, performedBy);
-    return employee;
+    return this.updateEmployee(id, { active }, performedBy);
   }
 
   // --- Planning & présence (100% manuel) ---
@@ -96,9 +112,11 @@ export class HRService {
     const records = db.get('personnelFinancialRecords');
     const idx = records.findIndex(r => r.id === id);
     if (idx === -1) throw new Error('Suivi financier introuvable.');
-    records[idx] = { ...records[idx], ...updates, id, updatedAt: nowIso() };
+    const before = records[idx];
+    records[idx] = { ...before, ...updates, id, updatedAt: nowIso() };
     db.set('personnelFinancialRecords', records);
-    db.logAudit('Correction suivi financier', 'hr', records[idx].employeeName, performedBy);
+    const changes = summarizeChanges(before, records[idx], FINANCIAL_RECORD_TRACKED_FIELDS);
+    db.logAudit('Correction suivi financier', 'hr', records[idx].employeeName, performedBy, changes);
     return records[idx];
   }
 

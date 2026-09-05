@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DatabaseSchema, User, EmployeeRecord, AttendanceRecord, PersonnelFinancialRecord, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, ExpenseCategory, SystemAlert, JournalEntry, CashRegisterSession } from '../types/index.js';
+import { DatabaseSchema, User, EmployeeRecord, AttendanceRecord, PersonnelFinancialRecord, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, ExpenseCategory, JournalEntry, CashRegisterSession } from '../types/index.js';
 
 /** Paramètres applicatifs persistants (config, non-métier) */
 export interface AppSettings {
@@ -13,11 +13,17 @@ export interface AppSettings {
   recipeRangeCalcMode: 'max' | 'median' | 'min';
   /** Délai (jours) avant péremption utilisé pour alerter, quand un produit n'a pas de délai propre. */
   defaultExpiryAlertLeadDays: number;
+  /** Écart net (DT), en valeur absolue, à partir duquel un inventaire validé déclenche une alerte. */
+  significantDiscrepancyThresholdDT: number;
+  /** Identifiants d'alertes (déterministes) que l'administrateur a marquées comme traitées. */
+  dismissedAlertIds: string[];
 }
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   recipeRangeCalcMode: 'max',
-  defaultExpiryAlertLeadDays: 5
+  defaultExpiryAlertLeadDays: 5,
+  significantDiscrepancyThresholdDT: 20,
+  dismissedAlertIds: []
 };
 
 const DB_FILE = path.resolve(process.cwd(), 'data', 'cafe_noir_db.json');
@@ -41,21 +47,12 @@ class DatabaseEngine {
       if (fs.existsSync(DB_FILE)) {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed: DatabaseSchema = JSON.parse(raw);
-        // V1 scope migration: permanently purge domains expressly excluded from the cahier des charges.
-        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls', 'shifts'] as const) {
-          delete (parsed as any)[key];
-        }
-        // The application has one administrator identity; employees are HR records, not logins.
-        parsed.users = (parsed.users || []).filter((u: any) => u?.role === 'admin').slice(0, 1);
-        if (parsed.users[0]) {
-          parsed.users[0] = { ...parsed.users[0], role: 'admin', pin: '' };
-        }
         for (const key of Object.keys(seed) as (keyof DatabaseSchema)[]) {
           if (!parsed[key] || !Array.isArray(parsed[key])) {
             parsed[key] = seed[key] as any;
           }
         }
-        for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls', 'shifts']) delete (parsed as any)[key];
+        this.applyV1ScopeMigration(parsed);
         this.migrateLegacyStockData(parsed);
         this.migrateLegacyPurchasingData(parsed);
         this.migrateLegacyExpenseData(parsed);
@@ -67,8 +64,26 @@ class DatabaseEngine {
       console.error('Error reading database file, resetting to seed data:', err);
     }
 
+    // A brand new installation must land in V1 scope too, not just upgrades from older data.
+    this.applyV1ScopeMigration(seed);
     this.persist(seed);
     return seed;
+  }
+
+  /**
+   * V1 scope enforcement, applied uniformly whether the data comes from an existing file (upgrade)
+   * or a fresh seed (new install): permanently purges domains expressly excluded from the cahier
+   * des charges, and collapses logins to the single administrator identity (employees are HR
+   * records, never login accounts — see EmployeeRecord).
+   */
+  private applyV1ScopeMigration(data: DatabaseSchema): void {
+    for (const key of ['spaces', 'tables', 'planElements', 'reservations', 'orders', 'cashRegisters', 'cashMovements', 'leaves', 'payrolls', 'shifts', 'alerts'] as const) {
+      delete (data as any)[key];
+    }
+    data.users = (data.users || []).filter((u: any) => u?.role === 'admin').slice(0, 1);
+    if (data.users[0]) {
+      data.users[0] = { ...data.users[0], role: 'admin', pin: '' };
+    }
   }
 
   /**
@@ -288,14 +303,25 @@ class DatabaseEngine {
     }
   }
 
-  public logAudit(action: string, category: JournalEntry['category'], details: string, performedBy: string, metadata?: Record<string, any>) {
+  /**
+   * Records one traceability entry. Read-only from the administration interface — there is no
+   * update/delete path, by design (see /api/journal — GET only).
+   */
+  public logAudit(
+    action: string,
+    category: JournalEntry['category'],
+    details: string,
+    performedBy: string,
+    changes?: { previousValue?: string; newValue?: string }
+  ) {
     const entry: JournalEntry = {
       id: `JRN-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       action,
       category,
       details,
       performedBy,
-      metadata,
+      previousValue: changes?.previousValue,
+      newValue: changes?.newValue,
       createdAt: new Date().toISOString()
     };
     this.data.journal.unshift(entry);
@@ -304,26 +330,6 @@ class DatabaseEngine {
     }
     this.persist(this.data);
     return entry;
-  }
-
-  public createAlert(type: SystemAlert['type'], title: string, message: string, severity: SystemAlert['severity'], linkUrl?: string, metadata?: Record<string, any>) {
-    const alert: SystemAlert = {
-      id: `ALT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      type,
-      title,
-      message,
-      severity,
-      read: false,
-      linkUrl,
-      metadata,
-      createdAt: new Date().toISOString()
-    };
-    this.data.alerts.unshift(alert);
-    if (this.data.alerts.length > 200) {
-      this.data.alerts = this.data.alerts.slice(0, 200);
-    }
-    this.persist(this.data);
-    return alert;
   }
 
   // ── App Settings (stored in a separate config file, not part of DatabaseSchema) ──
@@ -1122,30 +1128,6 @@ class DatabaseEngine {
       }
     ];
 
-    const alerts: SystemAlert[] = [
-      {
-        id: 'alt_qr_1001',
-        type: 'new_qr_order',
-        title: 'Nouvelle Commande QR - Table 7',
-        message: '2x Flat White Velouté + 2x Croissant Pur Beurre (16.000 DT) en attente d’acceptation.',
-        severity: 'warning',
-        read: false,
-        linkUrl: '/orders',
-        metadata: { orderId: 'ord_1001', tableNumber: '7' },
-        createdAt: new Date(Date.now() - 3 * 60 * 1000).toISOString()
-      },
-      {
-        id: 'alt_stock_1',
-        type: 'low_stock',
-        title: 'Seuil Critique Stock : Pain de Campagne',
-        message: 'Stock actuel: 8 unités (Seuil minimal: 4 unités). Réapprovisionnement suggéré.',
-        severity: 'info',
-        read: false,
-        linkUrl: '/stock',
-        createdAt: new Date(Date.now() - 120 * 60 * 1000).toISOString()
-      }
-    ];
-
     const journal: JournalEntry[] = [
       {
         id: 'jrn_init',
@@ -1207,7 +1189,6 @@ class DatabaseEngine {
       expenses,
       expenseCategories,
       attendances,
-      alerts,
       journal,
       cashRegisters,
       cashMovements: []

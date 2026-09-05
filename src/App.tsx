@@ -10,7 +10,6 @@ import { SuppliersView } from './components/suppliers/SuppliersView';
 import { HRView } from './components/hr/HRView';
 import { ExpensesView } from './components/expenses/ExpensesView';
 import { ReportsView } from './components/reports/ReportsView';
-import { JournalView } from './components/journal/JournalView';
 import { PublicWebsiteView } from './components/public/PublicWebsiteView';
 
 import { AppHeader } from './components/layout/AppHeader';
@@ -101,8 +100,7 @@ const AppContent: React.FC = () => {
           currentView === 'attendance' ||
           currentView === 'planning') && <HRView />}
         {currentView === 'expenses' && <ExpensesView />}
-        {currentView === 'reports' && <ReportsView />}
-        {(currentView === 'journal' || currentView === 'alerts') && <JournalView />}
+        {(currentView === 'reports' || currentView === 'journal' || currentView === 'alerts') && <ReportsView />}
       </main>
 
     </div>

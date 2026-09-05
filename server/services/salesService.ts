@@ -215,8 +215,7 @@ export class SalesService {
       'Saisie Vente',
       'sales',
       `Vente ${saleNumber} (${totalAmount.toFixed(3)} DT - ${paymentMethod.toUpperCase()} - ${consumptionType === 'sur_place' ? 'Sur place' : 'À emporter'}) enregistrée par ${data.cashierName}`,
-      data.cashierName,
-      { saleId: newSale.id, paymentMethod, consumptionType, ticketCount }
+      data.cashierName
     );
 
     return newSale;
@@ -381,7 +380,7 @@ export class SalesService {
       'sales',
       `Correction de la vente ${sale.saleNumber} par ${performedBy}. Motif: ${reason}`,
       performedBy,
-      { saleId: sale.id, previousAmount: previousSnapshot.totalAmount, newAmount: sale.totalAmount }
+      { previousValue: `${previousSnapshot.totalAmount.toFixed(3)} DT`, newValue: `${sale.totalAmount.toFixed(3)} DT` }
     );
 
     return sale;
@@ -483,8 +482,7 @@ export class SalesService {
       'Annulation Vente',
       'sales',
       `Vente ${sale.saleNumber} (${sale.totalAmount.toFixed(3)} DT) annulée par ${performedBy}. Motif: ${reason}`,
-      performedBy,
-      { saleId, cancelReason: reason }
+      performedBy
     );
 
     return sale;
@@ -608,8 +606,7 @@ export class SalesService {
       `Mouvement Caisse (${typeLabels[movementData.type]})`,
       'finance',
       `${typeLabels[movementData.type]} de ${amount.toFixed(3)} DT par ${movementData.performedBy}. Motif: ${movementData.reason}`,
-      movementData.performedBy,
-      { movementId: movement.id }
+      movementData.performedBy
     );
 
     return { session, movement };
@@ -754,8 +751,7 @@ export class SalesService {
       'Clôture Caisse (Z)',
       'finance',
       `Clôture Z par ${performedBy} (Espèces: ${session.actualClosingCash.toFixed(3)} DT / Attendu: ${session.expectedClosingCash.toFixed(3)} DT${vouchersInfo}${diffText})`,
-      performedBy,
-      { sessionId: session.id, cashDifference: session.cashDifference, checkedStocksCount: payload?.checkedStocks?.length || 0 }
+      performedBy
     );
 
     return session;

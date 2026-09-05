@@ -31,7 +31,7 @@ import {
 import { RetroProgressWidget } from '../common/RetroProgressWidget';
 
 export const DashboardView: React.FC = () => {
-  const { setCurrentView, refreshAlerts, globalVersion } = useSystem();
+  const { setCurrentView, navigateTo, refreshAlerts, globalVersion } = useSystem();
 
   // Period Filter State
   const [period, setPeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'custom'>('today');
@@ -653,10 +653,10 @@ export const DashboardView: React.FC = () => {
               <span>Alertes Opérationnelles ({alerts.length})</span>
             </h3>
             <button
-              onClick={() => setCurrentView('journal')}
+              onClick={() => navigateTo('reports', 'alerts')}
               className="text-xs font-bold text-[#252A27] hover:underline"
             >
-              Consulter le journal &rarr;
+              Voir toutes les alertes &rarr;
             </button>
           </div>
 
