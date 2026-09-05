@@ -7,6 +7,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ArrowLeft,
   AlertTriangle,
   QrCode,
   Sparkles
@@ -18,12 +19,13 @@ export const AppHeader: React.FC = () => {
     currentSubTab,
     currentAction,
     navigateTo,
+    setCurrentView,
     alerts,
     unreadAlertsCount,
     pendingOrdersCount
   } = useSystem();
 
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
 
   // Dropdown state for notifications
   const [isAlertsDropdownOpen, setIsAlertsDropdownOpen] = useState(false);
@@ -179,8 +181,21 @@ export const AppHeader: React.FC = () => {
           : 'bg-[#F2F3F0] border-b border-[#D9DDD8] shadow-2xs'
       }`}
     >
-      {/* Left Zone: Current Module Icon & Title */}
+      {/* Left Zone: Back-to-Menu Control & Current Module Icon & Title */}
       <div className="flex items-center space-x-2 sm:space-x-2.5 shrink-0 pl-0.5 pr-2.5 sm:pr-3.5 border-r border-[#D9DDD8]">
+        <button
+          type="button"
+          onClick={() => setCurrentView('menu')}
+          className="flex items-center space-x-1.5 px-2 sm:px-2.5 py-1.5 sm:py-2 rounded-lg bg-[#252A27] hover:bg-[#343B37] text-[#A4DEC2] shadow-2xs transition-all active:scale-95 cursor-pointer"
+          title="Retour au menu principal"
+          aria-label="Retour au menu principal"
+        >
+          <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span className="hidden sm:inline text-[10px] sm:text-xs font-black tracking-wider">MENU</span>
+        </button>
+
+        <div className="w-px h-6 bg-[#D9DDD8] hidden xs:block" />
+
         <button
           type="button"
           onClick={() => {
@@ -390,15 +405,13 @@ export const AppHeader: React.FC = () => {
           )}
         </div>
 
-        {/* Minimalist User Avatar: Single Letter Pill (Click to Switch User / PIN) */}
+        {/* Minimalist User Avatar: Single Letter Pill (Click to lock and return to PIN entry) */}
         <button
           type="button"
-          aria-disabled="true"
+          onClick={logout}
           className="w-8 h-8 rounded-full bg-[#252A27] text-[#A4DEC2] text-xs font-black flex items-center justify-center cursor-pointer shadow-2xs border border-[#252A27] hover:ring-2 hover:ring-[#8BCFAE] hover:scale-105 active:scale-95 transition-all"
-          title={`${currentUser?.name || 'Utilisateur'} (${
-            currentUser?.role === 'admin' ? 'Manager' : currentUser?.role || 'Staff'
-          }) — Cliquer pour changer d'utilisateur (PIN)`}
-          aria-label={`Compte utilisateur ${currentUser?.name || ''} - Changer par code PIN`}
+          title={`${currentUser?.name || 'Utilisateur'} — Cliquer pour verrouiller la session (code PIN)`}
+          aria-label={`Compte utilisateur ${currentUser?.name || ''} - Verrouiller la session`}
         >
           {(currentUser?.name?.charAt(0) || 'U').toUpperCase()}
         </button>

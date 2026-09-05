@@ -82,7 +82,8 @@ class DatabaseEngine {
     }
     data.users = (data.users || []).filter((u: any) => u?.role === 'admin').slice(0, 1);
     if (data.users[0]) {
-      data.users[0] = { ...data.users[0], role: 'admin', pin: '' };
+      // Preserve a real, already-set PIN across restarts; only ever fall back to the default once.
+      data.users[0] = { ...data.users[0], role: 'admin', pin: data.users[0].pin || '12345678' };
     }
   }
 
@@ -369,7 +370,7 @@ class DatabaseEngine {
         name: 'Adam Mansour',
         email: 'adam@café-noir.fr',
         role: 'admin',
-        pin: '1234',
+        pin: '12345678',
         phone: '+33 6 12 34 56 78',
         hourlyRate: 28.5,
         active: true,

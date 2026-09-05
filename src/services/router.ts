@@ -10,6 +10,8 @@ export interface RouteState {
 
 // Canonical view mapping from URL parameter to ViewMode
 const VIEW_PARAM_MAP: Record<string, ViewMode> = {
+  menu: 'menu',
+  tb: 'dashboard',
   dashboard: 'dashboard',
   pos: 'pos',
   orders: 'orders',
@@ -86,7 +88,7 @@ const VIEW_ALIAS_DEFAULTS: Partial<Record<ViewMode, { view: ViewMode; subTab?: s
  */
 export function parseCurrentUrl(): RouteState {
   if (typeof window === 'undefined') {
-    return { view: 'dashboard' };
+    return { view: 'menu' };
   }
 
   const searchParams = new URLSearchParams(window.location.search);
@@ -131,7 +133,7 @@ export function parseCurrentUrl(): RouteState {
   }
 
   // 4. Canonical Query Parameters parsing
-  const mappedView = rawViewParam ? VIEW_PARAM_MAP[rawViewParam.toLowerCase()] || 'dashboard' : 'dashboard';
+  const mappedView = rawViewParam ? VIEW_PARAM_MAP[rawViewParam.toLowerCase()] || 'menu' : 'menu';
   const subTab = searchParams.get('tab') || searchParams.get('subTab') || null;
   const action = searchParams.get('action') || null;
   const id = searchParams.get('id') || null;
@@ -153,7 +155,7 @@ export function parseCurrentUrl(): RouteState {
 export function buildUrl(state: Partial<RouteState>, fullOrigin = false): string {
   const params = new URLSearchParams();
 
-  let targetView = state.view || 'dashboard';
+  let targetView = state.view || 'menu';
   let targetSubTab = state.subTab;
   let targetAction = state.action;
 
@@ -165,12 +167,14 @@ export function buildUrl(state: Partial<RouteState>, fullOrigin = false): string
     if (!targetAction && def.action) targetAction = def.action;
   }
 
-  // Canonical param name for view
+  // Canonical param name for view — the main menu is the app's root and stays at a bare "/".
   if (targetView === 'public_website') {
     params.set('view', 'public');
   } else if (targetView === 'qr_customer_order') {
     params.set('view', 'qr_order');
-  } else if (targetView !== 'dashboard' || targetSubTab || targetAction || state.id) {
+  } else if (targetView === 'dashboard') {
+    params.set('view', 'tb');
+  } else if (targetView !== 'menu' || targetSubTab || targetAction || state.id) {
     params.set('view', targetView);
   }
 

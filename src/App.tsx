@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SystemProvider, useSystem } from './context/SystemContext';
 import { QuickAccessLauncher } from './components/layout/QuickAccessLauncher';
+import { LoginScreen } from './components/auth/LoginScreen';
+import { MainMenuView } from './components/menu/MainMenuView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { POSView } from './components/pos/POSView';
 import { ProductsView } from './components/catalog/ProductsView';
@@ -22,11 +24,9 @@ import {
 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  useAuth();
   const {
     currentView,
     setCurrentView,
-    navigateTo,
     routeNotification,
     clearRouteNotification
   } = useSystem();
@@ -35,9 +35,14 @@ const AppContent: React.FC = () => {
   if (currentView === 'public_website' as any) {
     return (
       <PublicWebsiteView
-        onOpenStaffApp={() => setCurrentView('dashboard')}
+        onOpenStaffApp={() => setCurrentView('menu')}
       />
     );
+  }
+
+  // The main menu is a self-contained, full-screen launcher — no app header/side drawer chrome.
+  if (currentView === 'menu') {
+    return <MainMenuView />;
   }
 
   return (
@@ -107,12 +112,29 @@ const AppContent: React.FC = () => {
   );
 };
 
+/**
+ * Gates the whole application behind PIN authentication: SystemProvider (and therefore all
+ * routing/view state) is only ever mounted once a session exists, so an unauthenticated visitor
+ * never has access to any module data.
+ */
+const AuthGate: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
+
+  return (
+    <SystemProvider>
+      <AppContent />
+    </SystemProvider>
+  );
+};
+
 export default function App() {
   return (
     <AuthProvider>
-      <SystemProvider>
-        <AppContent />
-      </SystemProvider>
+      <AuthGate />
     </AuthProvider>
   );
 }

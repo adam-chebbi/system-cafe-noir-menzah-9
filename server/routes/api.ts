@@ -23,29 +23,16 @@ const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 router.post('/auth/login-pin', (req, res) => {
   try {
     const { pin } = req.body;
-    if (!pin) return res.status(400).json({ error: 'PIN requis' });
+    if (!pin) return res.status(400).json({ error: 'Code PIN requis' });
 
     const users = db.get('users') || [];
-    let user = users.find(u => u && u.pin === String(pin).trim() && u.active);
-    
-    // Master fallback for common default demo PINs
-    if (!user) {
-      if (pin === '1234' || pin === '0000') {
-        user = users.find(u => u && u.role === 'admin' && u.active) || users[0];
-      } else if (pin === '2025') {
-        user = users.find(u => u && u.role === 'manager' && u.active);
-      } else if (pin === '5678' || pin === '1111') {
-        user = users.find(u => u && u.role === 'barista' && u.active);
-      } else if (pin === '4321') {
-        user = users.find(u => u && (u.role === 'cook' || u.role === 'server') && u.active);
-      }
-    }
+    const user = users.find(u => u && u.pin === String(pin).trim() && u.active);
 
     if (!user) {
-      return res.status(401).json({ error: 'Code PIN incorrect ou compte désactivé' });
+      return res.status(401).json({ error: 'Code PIN incorrect.' });
     }
 
-    db.logAudit('Connexion Utilisateur', 'admin', `Connexion de ${user.name} (${user.role})`, user.name);
+    db.logAudit('Connexion Utilisateur', 'admin', `Connexion de ${user.name}`, user.name);
     return res.json({ success: true, user });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

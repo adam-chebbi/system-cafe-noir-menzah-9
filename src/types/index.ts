@@ -837,6 +837,7 @@ export type WasteRecord = StockWaste;
 export type JournalLog = JournalEntry;
 
 export type ViewMode =
+  | 'menu'
   | 'dashboard'
   | 'pos'
   | 'orders'

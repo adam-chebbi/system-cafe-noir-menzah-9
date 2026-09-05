@@ -5,7 +5,7 @@
       "name": "Adam Mansour",
       "email": "adam@café-noir.fr",
       "role": "admin",
-      "pin": "",
+      "pin": "12345678",
       "phone": "+33 6 12 34 56 78",
       "hourlyRate": 28.5,
       "active": true,
