@@ -12,7 +12,7 @@ import {
   Receipt,
   TrendingUp,
   Bell,
-  Settings,
+  LogOut,
   Wifi,
   WifiOff,
   AlertTriangle,
@@ -261,11 +261,11 @@ export const MainMenuView: React.FC = () => {
             <button
               type="button"
               onClick={logout}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-bold transition-colors cursor-pointer"
-              title="Verrouiller la session (code PIN)"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-rose-500/20 hover:border-rose-400/30 border border-white/10 text-white text-xs font-bold transition-colors cursor-pointer"
+              title="Se déconnecter (code PIN requis pour revenir)"
             >
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline">Paramètres</span>
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Déconnexion</span>
             </button>
           </footer>
         </div>
