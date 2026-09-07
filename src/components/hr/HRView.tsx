@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useSystem } from '../../context/SystemContext';
 import { api } from '../../services/api';
-import { AttendanceRecord, AttendanceStatus, EmployeeRecord, PersonnelFinancialRecord } from '../../types';
+import { EmployeeRecord, PersonnelFinancialRecord } from '../../types';
 import { AttachmentUpload, fileToDataUrl } from '../common/AttachmentViewer';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { PlanningView } from './planning/PlanningView';
 import {
   Users,
   CalendarDays,
@@ -14,8 +15,6 @@ import {
   Edit3,
   X,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Phone,
   IdCard,
   Camera,
@@ -27,39 +26,11 @@ type HRTab = 'employees' | 'planning' | 'finance';
 
 type ConfirmTarget =
   | { type: 'toggle-employee'; employee: EmployeeRecord }
-  | { type: 'delete-presence'; record: AttendanceRecord }
   | { type: 'delete-finance'; record: PersonnelFinancialRecord };
-
-const STATUS_META: Record<AttendanceStatus, { label: string; badge: string; dot: string }> = {
-  present: { label: 'Présent', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
-  absent: { label: 'Absent', badge: 'bg-rose-100 text-rose-800 border-rose-200', dot: 'bg-rose-500' },
-  leave: { label: 'Congé', badge: 'bg-violet-100 text-violet-800 border-violet-200', dot: 'bg-violet-500' },
-  rest: { label: 'Repos', badge: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-400' },
-  late: { label: 'Retard', badge: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-500' }
-};
-
-const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 const money = (value: number) => `${(value || 0).toFixed(3)} DT`;
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const currentMonthStr = () => todayStr().slice(0, 7);
-const toDateStr = (date: Date) => date.toISOString().slice(0, 10);
-
-const startOfWeek = (dateStr: string): Date => {
-  const date = new Date(`${dateStr}T12:00:00`);
-  const weekday = date.getDay(); // 0 = Sunday
-  const diffToMonday = weekday === 0 ? -6 : 1 - weekday;
-  date.setDate(date.getDate() + diffToMonday);
-  return date;
-};
-
-const addDays = (date: Date, days: number): Date => {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-};
-
-const formatShortDate = (date: Date) => date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 
 const emptyEmployeeForm = (): Partial<EmployeeRecord> => ({
   name: '',
@@ -137,19 +108,14 @@ export const HRView: React.FC = () => {
 
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [financialRecords, setFinancialRecords] = useState<PersonnelFinancialRecord[]>([]);
-  const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
 
   const [employeeQuery, setEmployeeQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
-
-  const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(todayStr()));
-  const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
   const [financeEmployeeFilter, setFinanceEmployeeFilter] = useState('');
   const [financeMonthFilter, setFinanceMonthFilter] = useState(currentMonthStr());
 
   const [employeeForm, setEmployeeForm] = useState<Partial<EmployeeRecord> | null>(null);
-  const [presenceForm, setPresenceForm] = useState<Partial<AttendanceRecord> | null>(null);
   const [financeForm, setFinanceForm] = useState<Partial<PersonnelFinancialRecord> | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
 
@@ -166,24 +132,10 @@ export const HRView: React.FC = () => {
     }
   };
 
-  const loadAttendances = async () => {
-    try {
-      const data = await api.getAttendances({ start: toDateStr(weekStart), end: toDateStr(addDays(weekStart, 6)) });
-      setAttendances(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Failed to load presence data:', err);
-    }
-  };
-
   useEffect(() => {
     loadCore();
   }, [globalVersion]);
 
-  useEffect(() => {
-    loadAttendances();
-  }, [weekStart, globalVersion]);
-
-  const activeEmployees = employees.filter(e => e.active);
   const visibleEmployees = employees
     .filter(e => showInactive || e.active)
     .filter(e => {
@@ -226,59 +178,6 @@ export const HRView: React.FC = () => {
         await api.updateEmployee(employee.id, { active: true }, performedBy);
       }
       triggerGlobalRefresh();
-    } catch (err: any) {
-      showRouteNotification(err.message || 'Erreur.', 'error');
-    } finally {
-      setConfirmTarget(null);
-    }
-  };
-
-  // --- Planning & présence ---
-  const openPresenceEntry = (employee: EmployeeRecord, date: string, existing?: AttendanceRecord) => {
-    setPresenceForm(
-      existing
-        ? { ...existing }
-        : {
-            employeeId: employee.id,
-            employeeName: employee.name,
-            date,
-            status: 'present',
-            plannedStartTime: '',
-            plannedEndTime: '',
-            notes: ''
-          }
-    );
-  };
-
-  const submitPresence = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!presenceForm?.employeeId || !presenceForm.date || !presenceForm.status) return;
-    const employee = employees.find(x => x.id === presenceForm.employeeId);
-    try {
-      await api.saveAttendance(
-        {
-          employeeId: presenceForm.employeeId,
-          employeeName: employee?.name || presenceForm.employeeName || '',
-          date: presenceForm.date,
-          status: presenceForm.status as AttendanceStatus,
-          plannedStartTime: presenceForm.plannedStartTime || undefined,
-          plannedEndTime: presenceForm.plannedEndTime || undefined,
-          notes: presenceForm.notes || undefined
-        },
-        performedBy
-      );
-      setPresenceForm(null);
-      loadAttendances();
-    } catch (err: any) {
-      showRouteNotification(err.message || 'Erreur.', 'error');
-    }
-  };
-
-  const confirmDeletePresence = async () => {
-    if (!confirmTarget || confirmTarget.type !== 'delete-presence') return;
-    try {
-      await api.deleteAttendance(confirmTarget.record.id, performedBy);
-      loadAttendances();
     } catch (err: any) {
       showRouteNotification(err.message || 'Erreur.', 'error');
     } finally {
@@ -477,110 +376,7 @@ export const HRView: React.FC = () => {
         )}
 
         {tab === 'planning' && (
-          <section className="space-y-4">
-            <div className="bg-white border border-[#D9DDD8] rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setWeekStart(addDays(weekStart, -7))}
-                  className="p-2 rounded-lg bg-[#ECEEEA] hover:bg-[#D9DDD8] transition-colors"
-                  title="Semaine précédente"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <div className="text-sm font-bold text-[#252A27] min-w-[170px] text-center">
-                  Semaine du {formatShortDate(weekDates[0])} au {formatShortDate(weekDates[6])}
-                </div>
-                <button
-                  onClick={() => setWeekStart(addDays(weekStart, 7))}
-                  className="p-2 rounded-lg bg-[#ECEEEA] hover:bg-[#D9DDD8] transition-colors"
-                  title="Semaine suivante"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setWeekStart(startOfWeek(todayStr()))}
-                  className="text-xs font-bold text-[#555D58] hover:text-[#252A27] px-2.5 py-1.5 rounded-lg hover:bg-[#ECEEEA] transition-colors"
-                >
-                  Aujourd'hui
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                {(Object.entries(STATUS_META) as [AttendanceStatus, typeof STATUS_META[AttendanceStatus]][]).map(([key, meta]) => (
-                  <span key={key} className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-[#F7F7F5] border border-[#D9DDD8] text-[#555D58] font-semibold">
-                    <span className={`w-2 h-2 rounded-full ${meta.dot}`} />
-                    {meta.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {activeEmployees.length === 0 ? (
-              <div className="bg-white border border-dashed border-[#D9DDD8] rounded-2xl p-10 text-center text-sm text-[#555D58]">
-                Ajoutez un employé actif dans l'onglet Employés pour commencer à planifier.
-              </div>
-            ) : (
-              <div className="bg-white border border-[#D9DDD8] rounded-2xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm border-collapse min-w-[760px]">
-                    <thead>
-                      <tr className="bg-[#F2F3F0]">
-                        <th className="sticky left-0 bg-[#F2F3F0] text-left p-3 font-bold text-[#252A27] border-b border-[#D9DDD8] min-w-[170px]">
-                          Employé
-                        </th>
-                        {weekDates.map(date => {
-                          const isToday = toDateStr(date) === todayStr();
-                          return (
-                            <th
-                              key={toDateStr(date)}
-                              className={`p-2.5 text-center border-b border-[#D9DDD8] min-w-[108px] ${isToday ? 'bg-[#A4DEC2]/20' : ''}`}
-                            >
-                              <p className="font-bold text-[#252A27]">{WEEKDAY_LABELS[(date.getDay() + 6) % 7]}</p>
-                              <p className="text-[11px] text-[#555D58] font-normal">
-                                {String(date.getDate()).padStart(2, '0')}/{String(date.getMonth() + 1).padStart(2, '0')}
-                              </p>
-                            </th>
-                          );
-                        })}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeEmployees.map(employee => (
-                        <tr key={employee.id} className="border-b border-[#ECEEEA] last:border-0">
-                          <td className="sticky left-0 bg-white p-3 align-top">
-                            <p className="font-bold text-[#252A27]">{employee.name}</p>
-                            <p className="text-[11px] text-[#555D58]">{employee.position}</p>
-                          </td>
-                          {weekDates.map(date => {
-                            const dateStr = toDateStr(date);
-                            const record = attendances.find(a => a.employeeId === employee.id && a.date === dateStr);
-                            return (
-                              <td key={dateStr} className="p-1.5 text-center align-top">
-                                <button
-                                  onClick={() => openPresenceEntry(employee, dateStr, record)}
-                                  className={`w-full rounded-lg border px-1.5 py-1.5 text-[11px] font-bold transition-colors ${
-                                    record
-                                      ? STATUS_META[record.status].badge
-                                      : 'bg-[#F7F7F5] border-dashed border-[#D9DDD8] text-[#9AA39C] hover:border-[#252A27] hover:text-[#252A27]'
-                                  }`}
-                                >
-                                  {record ? STATUS_META[record.status].label : '+ Ajouter'}
-                                  {record && (record.plannedStartTime || record.plannedEndTime) && (
-                                    <span className="block font-normal text-[10px] mt-0.5 opacity-80">
-                                      {record.plannedStartTime || '—'}–{record.plannedEndTime || '—'}
-                                    </span>
-                                  )}
-                                </button>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </section>
+          <PlanningView employees={employees} performedBy={performedBy} onDataChanged={triggerGlobalRefresh} />
         )}
 
         {tab === 'finance' && (
@@ -839,103 +635,6 @@ export const HRView: React.FC = () => {
         </div>
       )}
 
-      {/* --- Modale : saisie / correction de présence --- */}
-      {presenceForm && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#F2F3F0] rounded-2xl p-5 max-w-md w-full shadow-2xl border border-[#C7CDC8] animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-[#D9DDD8]">
-              <div>
-                <h3 className="font-bold text-sm text-[#252A27]">{presenceForm.employeeName}</h3>
-                <p className="text-[11px] text-[#555D58]">{presenceForm.date}</p>
-              </div>
-              <button onClick={() => setPresenceForm(null)} className="p-1 rounded-lg bg-[#ECEEEA] text-[#252A27] border border-[#D9DDD8]">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <form onSubmit={submitPresence} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-[#252A27]">Statut</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(Object.entries(STATUS_META) as [AttendanceStatus, typeof STATUS_META[AttendanceStatus]][]).map(([key, meta]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setPresenceForm({ ...presenceForm, status: key })}
-                      className={`px-2 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                        presenceForm.status === key ? meta.badge : 'bg-white border-[#D9DDD8] text-[#555D58] hover:bg-[#ECEEEA]'
-                      }`}
-                    >
-                      {meta.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#252A27]">Heure prévue - début</label>
-                  <input
-                    type="time"
-                    value={presenceForm.plannedStartTime || ''}
-                    onChange={e => setPresenceForm({ ...presenceForm, plannedStartTime: e.target.value })}
-                    className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27] focus:outline-none focus:border-[#252A27]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#252A27]">Heure prévue - fin</label>
-                  <input
-                    type="time"
-                    value={presenceForm.plannedEndTime || ''}
-                    onChange={e => setPresenceForm({ ...presenceForm, plannedEndTime: e.target.value })}
-                    className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27] focus:outline-none focus:border-[#252A27]"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-[#252A27]">Note (optionnel)</label>
-                <input
-                  type="text"
-                  placeholder="Ex : retard signalé, motif d'absence..."
-                  value={presenceForm.notes || ''}
-                  onChange={e => setPresenceForm({ ...presenceForm, notes: e.target.value })}
-                  className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-semibold text-[#252A27] focus:outline-none focus:border-[#252A27]"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                {presenceForm.id && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const record = attendances.find(a => a.id === presenceForm.id);
-                      if (record) setConfirmTarget({ type: 'delete-presence', record });
-                      setPresenceForm(null);
-                    }}
-                    className="px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors"
-                  >
-                    Supprimer
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPresenceForm(null)}
-                  className="flex-1 py-2 rounded-lg bg-white border border-[#D9DDD8] text-xs font-bold text-[#555D58] hover:bg-[#ECEEEA] transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 rounded-lg bg-[#A4DEC2] hover:bg-[#8BCFAE] text-[#252A27] text-xs font-bold border border-[#8BCFAE] transition-colors shadow-2xs"
-                >
-                  Enregistrer
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* --- Modale : suivi financier --- */}
       {financeForm && (
@@ -1087,8 +786,6 @@ export const HRView: React.FC = () => {
             ? confirmTarget.employee.active
               ? "Désactiver l'employé"
               : "Réactiver l'employé"
-            : confirmTarget?.type === 'delete-presence'
-            ? 'Supprimer la présence'
             : 'Supprimer la saisie financière'
         }
         message={
@@ -1096,8 +793,6 @@ export const HRView: React.FC = () => {
             ? confirmTarget.employee.active
               ? `${confirmTarget.employee.name} n'apparaîtra plus dans le planning ni dans les nouvelles saisies. Son historique est conservé.`
               : `${confirmTarget.employee.name} redevient actif et réapparaît dans le planning.`
-            : confirmTarget?.type === 'delete-presence'
-            ? `Supprimer la présence de ${confirmTarget.record.employeeName} du ${confirmTarget.record.date} ?`
             : confirmTarget?.type === 'delete-finance'
             ? `Supprimer la saisie financière de ${confirmTarget.record.employeeName} (${money(confirmTarget.record.amountPaid)}) ?`
             : ''
@@ -1106,7 +801,6 @@ export const HRView: React.FC = () => {
         variant={confirmTarget?.type === 'toggle-employee' && !confirmTarget.employee.active ? 'info' : 'danger'}
         onConfirm={() => {
           if (confirmTarget?.type === 'toggle-employee') confirmToggleEmployee();
-          else if (confirmTarget?.type === 'delete-presence') confirmDeletePresence();
           else if (confirmTarget?.type === 'delete-finance') confirmDeleteFinance();
         }}
         onCancel={() => setConfirmTarget(null)}

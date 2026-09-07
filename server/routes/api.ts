@@ -10,6 +10,7 @@ import { SalesService } from '../services/salesService.js';
 import { SupplierService } from '../services/supplierService.js';
 import { ProductMappingService } from '../services/productMappingService.js';
 import { HRService } from '../services/hrService.js';
+import { ScheduleService } from '../services/scheduleService.js';
 import { AlertService } from '../services/alertService.js';
 import { ExpenseService } from '../services/expenseService.js';
 import { ReportService } from '../services/reportService.js';
@@ -1132,6 +1133,59 @@ router.delete('/hr/presence/:id', (req, res) => {
   try {
     HRService.deleteAttendance(req.params.id, (req.query.performedBy as string) || 'Administrateur');
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/hr/presence/range', (req, res) => {
+  try {
+    const records = HRService.saveAttendanceRange(req.body, req.body.performedBy || 'Administrateur');
+    res.status(201).json(records);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/hr/presence/group/:leaveGroupId', (req, res) => {
+  try {
+    const count = HRService.deleteAttendanceGroup(req.params.leaveGroupId, (req.query.performedBy as string) || 'Administrateur');
+    res.json({ success: true, count });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- Planning récurrent (semaines types) ---
+router.get('/hr/schedule-templates', (req, res) => {
+  res.json(ScheduleService.getTemplates(req.query.employeeId as string));
+});
+
+router.post('/hr/schedule-templates', (req, res) => {
+  try {
+    const { employeeId, employeeName, days, effectiveFrom, notes, performedBy } = req.body;
+    const template = ScheduleService.saveTemplate(employeeId, employeeName, days, effectiveFrom, performedBy || 'Administrateur', notes);
+    res.status(201).json(template);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/hr/schedule-templates/duplicate', (req, res) => {
+  try {
+    const { fromEmployeeId, toEmployeeId, toEmployeeName, effectiveFrom, performedBy } = req.body;
+    const template = ScheduleService.duplicateTemplate(fromEmployeeId, toEmployeeId, toEmployeeName, effectiveFrom, performedBy || 'Administrateur');
+    res.status(201).json(template);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/hr/schedule-week-override', (req, res) => {
+  try {
+    const { employeeId, employeeName, weekStart, days, performedBy } = req.body;
+    const records = HRService.applyWeekOverride(employeeId, employeeName, weekStart, days, performedBy || 'Administrateur');
+    res.status(201).json(records);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

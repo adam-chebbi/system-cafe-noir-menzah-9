@@ -37,16 +37,62 @@ export interface EmployeeRecord {
 
 export type AttendanceStatus = 'present' | 'absent' | 'leave' | 'rest' | 'late';
 
-/** One manually-entered planning & presence record per employee per day. Attendance is 100% manual: no clock, no biometrics. */
+export type ShiftType = 'matin' | 'soir';
+
+/**
+ * One manually-entered planning & presence record per employee per day. Attendance is 100% manual: no
+ * clock, no biometrics.
+ *
+ * This record is always an EXCEPTION to the employee's recurring weekly template (see
+ * EmployeeScheduleTemplate): a day with no AttendanceRecord simply follows the template's rule for that
+ * weekday. Creating/updating a record for a given date overrides only that single date — it never
+ * touches the recurring rule, so future weeks keep following the template automatically.
+ */
 export interface AttendanceRecord {
   id: string;
   employeeId: string;
   employeeName: string;
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
+  /** Shift in effect for this exception (kept even for absent/late, so the "shift prévu" stays visible). */
+  shift?: ShiftType;
   plannedStartTime?: string; // HH:mm
   plannedEndTime?: string; // HH:mm
+  /** Retard uniquement : heure d'arrivée réelle constatée. */
+  actualStartTime?: string; // HH:mm
+  /** Congé multi-jours : identifiant partagé par tous les jours d'une même période, pour édition/suppression groupée. */
+  leaveGroupId?: string;
   notes?: string;
+  updatedAt?: string;
+}
+
+/** One weekday's recurring rule within an employee's schedule template. 0 = Lundi ... 6 = Dimanche. */
+export interface RecurringDayRule {
+  weekday: number;
+  /** false = jour de repos récurrent (se répète chaque semaine). */
+  worked: boolean;
+  shift?: ShiftType;
+  startTime?: string; // HH:mm
+  endTime?: string; // HH:mm
+}
+
+/**
+ * Recurring weekly schedule ("semaine type") for one employee. Templates are versioned over time via
+ * effectiveFrom/effectiveTo rather than mutated in place: changing a schedule "à partir de cette date"
+ * closes the current version and inserts a new one, so past weeks keep resolving against the rule that
+ * was actually in force at the time (history is never rewritten).
+ */
+export interface EmployeeScheduleTemplate {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  /** Exactly 7 entries, one per weekday (0=Lundi..6=Dimanche). */
+  days: RecurringDayRule[];
+  effectiveFrom: string; // YYYY-MM-DD, inclusive
+  effectiveTo?: string; // YYYY-MM-DD, exclusive — set automatically when a newer version supersedes this one
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PersonnelFinancialRecord {

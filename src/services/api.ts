@@ -3,7 +3,8 @@ import {
   Product, Order, Sale, StockMovement, StockWaste, InventoryAudit, StockLot, StockZone,
   Supplier, PurchaseOrder, SupplierInvoice, SupplierInvoiceWithDueStatus, IngredientPurchaseHistoryEntry, ProductLabelMapping, Expense, ExpenseCategory,
   SystemAlert, JournalEntry, CashRegisterSession, CashMovement,
-  TheoreticalConsumptionReport, IngredientTheoreticalStock, EmployeeRecord, AttendanceRecord, AttendanceStatus, PersonnelFinancialRecord, AppSettings
+  TheoreticalConsumptionReport, IngredientTheoreticalStock, EmployeeRecord, AttendanceRecord, AttendanceStatus, PersonnelFinancialRecord, AppSettings,
+  ShiftType, RecurringDayRule, EmployeeScheduleTemplate
 } from '../types/index';
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -54,8 +55,11 @@ export const api = {
     employeeName: string;
     date: string;
     status: AttendanceStatus;
+    shift?: ShiftType;
     plannedStartTime?: string;
     plannedEndTime?: string;
+    actualStartTime?: string;
+    leaveGroupId?: string;
     notes?: string;
   }, performedBy: string) => fetchJson<AttendanceRecord>('/api/hr/presence', {
     method: 'PUT',
@@ -63,6 +67,54 @@ export const api = {
   }),
   deleteAttendance: (id: string, performedBy: string) => fetchJson<{ success: boolean }>(`/api/hr/presence/${id}?performedBy=${encodeURIComponent(performedBy)}`, {
     method: 'DELETE'
+  }),
+  saveAttendanceRange: (data: {
+    employeeId: string;
+    employeeName: string;
+    startDate: string;
+    endDate: string;
+    status: AttendanceStatus;
+    shift?: ShiftType;
+    plannedStartTime?: string;
+    plannedEndTime?: string;
+    notes?: string;
+  }, performedBy: string) => fetchJson<AttendanceRecord[]>('/api/hr/presence/range', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  deleteAttendanceGroup: (leaveGroupId: string, performedBy: string) => fetchJson<{ success: boolean; count: number }>(`/api/hr/presence/group/${leaveGroupId}?performedBy=${encodeURIComponent(performedBy)}`, {
+    method: 'DELETE'
+  }),
+
+  // Planning récurrent (semaines types)
+  getScheduleTemplates: (employeeId?: string) => fetchJson<EmployeeScheduleTemplate[]>(`/api/hr/schedule-templates${employeeId ? `?employeeId=${employeeId}` : ''}`),
+  saveScheduleTemplate: (data: {
+    employeeId: string;
+    employeeName: string;
+    days: RecurringDayRule[];
+    effectiveFrom: string;
+    notes?: string;
+  }, performedBy: string) => fetchJson<EmployeeScheduleTemplate>('/api/hr/schedule-templates', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  duplicateScheduleTemplate: (data: {
+    fromEmployeeId: string;
+    toEmployeeId: string;
+    toEmployeeName: string;
+    effectiveFrom: string;
+  }, performedBy: string) => fetchJson<EmployeeScheduleTemplate>('/api/hr/schedule-templates/duplicate', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
+  }),
+  applyScheduleWeekOverride: (data: {
+    employeeId: string;
+    employeeName: string;
+    weekStart: string;
+    days: RecurringDayRule[];
+  }, performedBy: string) => fetchJson<AttendanceRecord[]>('/api/hr/schedule-week-override', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, performedBy })
   }),
   getPersonnelFinancialRecords: (employeeId?: string) => fetchJson<PersonnelFinancialRecord[]>(`/api/hr/financial-records${employeeId ? `?employeeId=${employeeId}` : ''}`),
   createPersonnelFinancialRecord: (data: Partial<PersonnelFinancialRecord>, performedBy: string) => fetchJson<PersonnelFinancialRecord>('/api/hr/financial-records', {

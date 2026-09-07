@@ -970,5 +970,121 @@
       "performedBy": "Client QR (Table 7)",
       "createdAt": "2026-09-04T14:59:41.606Z"
     }
+  ],
+  "scheduleTemplates": [
+    {
+      "id": "sched_emp_1_v1",
+      "employeeId": "emp_1",
+      "employeeName": "Lucas Morel",
+      "days": [
+        {
+          "weekday": 0,
+          "worked": true,
+          "shift": "matin",
+          "startTime": "07:30",
+          "endTime": "15:30"
+        },
+        {
+          "weekday": 1,
+          "worked": false
+        },
+        {
+          "weekday": 2,
+          "worked": true,
+          "shift": "matin",
+          "startTime": "07:30",
+          "endTime": "15:30"
+        },
+        {
+          "weekday": 3,
+          "worked": true,
+          "shift": "matin",
+          "startTime": "07:30",
+          "endTime": "15:30"
+        },
+        {
+          "weekday": 4,
+          "worked": true,
+          "shift": "matin",
+          "startTime": "07:30",
+          "endTime": "15:30"
+        },
+        {
+          "weekday": 5,
+          "worked": true,
+          "shift": "matin",
+          "startTime": "07:30",
+          "endTime": "15:30"
+        },
+        {
+          "weekday": 6,
+          "worked": true,
+          "shift": "matin",
+          "startTime": "08:00",
+          "endTime": "14:00"
+        }
+      ],
+      "effectiveFrom": "2024-03-01",
+      "notes": "Repos fixe le mardi.",
+      "createdAt": "2026-09-07T16:05:48.083Z",
+      "updatedAt": "2026-09-07T16:05:48.083Z"
+    },
+    {
+      "id": "sched_emp_2_v1",
+      "employeeId": "emp_2",
+      "employeeName": "Sophie Dubois",
+      "days": [
+        {
+          "weekday": 0,
+          "worked": true,
+          "shift": "soir",
+          "startTime": "15:30",
+          "endTime": "23:00"
+        },
+        {
+          "weekday": 1,
+          "worked": true,
+          "shift": "soir",
+          "startTime": "15:30",
+          "endTime": "23:00"
+        },
+        {
+          "weekday": 2,
+          "worked": true,
+          "shift": "soir",
+          "startTime": "15:30",
+          "endTime": "23:00"
+        },
+        {
+          "weekday": 3,
+          "worked": true,
+          "shift": "soir",
+          "startTime": "15:30",
+          "endTime": "23:00"
+        },
+        {
+          "weekday": 4,
+          "worked": true,
+          "shift": "soir",
+          "startTime": "15:30",
+          "endTime": "23:00"
+        },
+        {
+          "weekday": 5,
+          "worked": true,
+          "shift": "soir",
+          "startTime": "14:00",
+          "endTime": "23:00"
+        },
+        {
+          "weekday": 6,
+          "worked": false
+        }
+      ],
+      "effectiveFrom": "2024-06-15",
+      "notes": "Repos fixe le dimanche.",
+      "createdAt": "2026-09-07T16:05:48.083Z",
+      "updatedAt": "2026-09-07T16:05:48.083Z"
+    }
   ]
 }

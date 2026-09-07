@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DatabaseSchema, User, EmployeeRecord, AttendanceRecord, PersonnelFinancialRecord, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, ExpenseCategory, JournalEntry, CashRegisterSession } from '../types/index.js';
+import { DatabaseSchema, User, EmployeeRecord, AttendanceRecord, EmployeeScheduleTemplate, PersonnelFinancialRecord, Space, Table, PlanElement, Reservation, Category, Ingredient, TechnicalRecipe, Product, Order, Sale, StockMovement, StockLot, Supplier, SupplierInvoice, Expense, ExpenseCategory, JournalEntry, CashRegisterSession } from '../types/index.js';
 
 /** Paramètres applicatifs persistants (config, non-métier) */
 export interface AppSettings {
@@ -1092,9 +1092,52 @@ class DatabaseEngine {
         employeeName: 'Sophie Dubois',
         date: todayStr,
         status: 'late',
+        shift: 'soir',
         plannedStartTime: '10:00',
         plannedEndTime: '18:00',
+        actualStartTime: '10:20',
         notes: 'Arrivée à 10h20'
+      }
+    ];
+
+    // Semaines types de démonstration : Lucas Morel travaille le Matin tous les jours sauf le mardi
+    // (repos récurrent) ; Sophie Dubois travaille le Soir tous les jours sauf le dimanche.
+    const scheduleTemplates: EmployeeScheduleTemplate[] = [
+      {
+        id: 'sched_emp_1_v1',
+        employeeId: 'emp_1',
+        employeeName: 'Lucas Morel',
+        days: [
+          { weekday: 0, worked: true, shift: 'matin', startTime: '07:30', endTime: '15:30' },
+          { weekday: 1, worked: false },
+          { weekday: 2, worked: true, shift: 'matin', startTime: '07:30', endTime: '15:30' },
+          { weekday: 3, worked: true, shift: 'matin', startTime: '07:30', endTime: '15:30' },
+          { weekday: 4, worked: true, shift: 'matin', startTime: '07:30', endTime: '15:30' },
+          { weekday: 5, worked: true, shift: 'matin', startTime: '07:30', endTime: '15:30' },
+          { weekday: 6, worked: true, shift: 'matin', startTime: '08:00', endTime: '14:00' }
+        ],
+        effectiveFrom: '2024-03-01',
+        notes: 'Repos fixe le mardi.',
+        createdAt: employeeCreatedAt,
+        updatedAt: employeeCreatedAt
+      },
+      {
+        id: 'sched_emp_2_v1',
+        employeeId: 'emp_2',
+        employeeName: 'Sophie Dubois',
+        days: [
+          { weekday: 0, worked: true, shift: 'soir', startTime: '15:30', endTime: '23:00' },
+          { weekday: 1, worked: true, shift: 'soir', startTime: '15:30', endTime: '23:00' },
+          { weekday: 2, worked: true, shift: 'soir', startTime: '15:30', endTime: '23:00' },
+          { weekday: 3, worked: true, shift: 'soir', startTime: '15:30', endTime: '23:00' },
+          { weekday: 4, worked: true, shift: 'soir', startTime: '15:30', endTime: '23:00' },
+          { weekday: 5, worked: true, shift: 'soir', startTime: '14:00', endTime: '23:00' },
+          { weekday: 6, worked: false }
+        ],
+        effectiveFrom: '2024-06-15',
+        notes: 'Repos fixe le dimanche.',
+        createdAt: employeeCreatedAt,
+        updatedAt: employeeCreatedAt
       }
     ];
 
@@ -1190,6 +1233,7 @@ class DatabaseEngine {
       expenses,
       expenseCategories,
       attendances,
+      scheduleTemplates,
       journal,
       cashRegisters,
       cashMovements: []
