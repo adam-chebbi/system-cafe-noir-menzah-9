@@ -60,6 +60,15 @@
   background: #C7CDC8;
 }
 
+/* Hides the scrollbar on the horizontal quick-add chips row while keeping it scrollable */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Touch-optimized active states */
 @media (hover: none) {
   button:active, a:active {

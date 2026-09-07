@@ -373,6 +373,8 @@ export interface Sale {
   totalAmount: number;
   paymentMethod: PaymentMethod;
   consumptionType?: ConsumptionType;
+  /** Service pendant lequel la vente a eu lieu (saisie manuelle, à but de suivi/organisation). */
+  shift?: 'matin' | 'apres_midi' | 'soir';
   ticketCount?: number;
   splitDetails?: { method: string; amount: number }[];
   amountReceived?: number;

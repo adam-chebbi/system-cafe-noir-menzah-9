@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { api } from '../../services/api';
-import { User, Sale } from '../../types';
+import { User } from '../../types';
 import {
   Upload,
   FileSpreadsheet,
@@ -10,8 +10,10 @@ import {
   AlertCircle,
   Check,
   RefreshCw,
-  FileText,
-  HelpCircle
+  HelpCircle,
+  X,
+  Filter,
+  Loader2
 } from 'lucide-react';
 
 interface SalesExcelCsvImportProps {
@@ -37,6 +39,21 @@ interface ParsedSaleRow {
   errors: string[];
 }
 
+const COLUMN_GUIDE: { label: string; hint: string }[] = [
+  { label: 'Date', hint: 'Format AAAA-MM-JJ HH:MM. Si vide, la date du jour est utilisée.' },
+  { label: 'Table / Emplacement', hint: 'Ex: Table 4, Comptoir, Terrasse. Facultatif.' },
+  { label: 'Produit', hint: 'Nom exact de l\'article vendu. Obligatoire.' },
+  { label: 'Variante', hint: 'Ex: Grand, Simple, Sans sucre. Facultatif.' },
+  { label: 'Quantité', hint: 'Nombre entier ≥ 1.' },
+  { label: 'Prix Unitaire TTC', hint: 'Prix en DT, doit être strictement supérieur à 0.' },
+  { label: 'TVA %', hint: 'Taux de TVA appliqué. Par défaut 7%.' },
+  { label: 'Mode de Paiement', hint: 'Espèces, TPE ou Ticket restaurant.' },
+  { label: 'Type de Consommation', hint: 'Sur place ou À emporter.' },
+  { label: 'Nombre de Tickets', hint: 'Nombre de tickets de caisse regroupés dans cette ligne.' },
+  { label: 'Caissier / Opérateur', hint: 'Nom de la personne ayant réalisé la vente.' },
+  { label: 'Notes & Références', hint: 'Référence libre, ex: numéro de ticket. Facultatif.' }
+];
+
 export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
   currentUser,
   onImportCompleted
@@ -44,17 +61,22 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
   const [parsedRows, setParsedRows] = useState<ParsedSaleRow[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [parsing, setParsing] = useState<boolean>(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [showErrorsOnly, setShowErrorsOnly] = useState<boolean>(false);
+  const [showGuide, setShowGuide] = useState<boolean>(false);
 
-  // Handle File Upload (Excel or CSV)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const dragCounter = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const parseWorkbookFile = (file: File) => {
     setFileName(file.name);
     setErrorMsg('');
     setImportResult(null);
+    setShowErrorsOnly(false);
+    setParsing(true);
 
     const reader = new FileReader();
     reader.onload = evt => {
@@ -71,6 +93,7 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
         if (rawJson.length < 2) {
           setErrorMsg('Le fichier sélectionné est vide ou ne contient pas d\'en-tête.');
           setParsedRows([]);
+          setParsing(false);
           return;
         }
 
@@ -121,9 +144,67 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
         setParsedRows(rows);
       } catch (err: any) {
         setErrorMsg(`Erreur lors de la lecture du fichier : ${err.message}`);
+      } finally {
+        setParsing(false);
       }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    parseWorkbookFile(file);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    const validExt = /\.(xlsx|xls|csv)$/i.test(file.name);
+    if (!validExt) {
+      setErrorMsg('Format non supporté. Veuillez déposer un fichier .xlsx, .xls ou .csv.');
+      return;
+    }
+    parseWorkbookFile(file);
+  };
+
+  const handleResetFile = () => {
+    setParsedRows([]);
+    setFileName('');
+    setErrorMsg('');
+    setImportResult(null);
+    setShowErrorsOnly(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Download Sample Excel Template
@@ -234,6 +315,8 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
     .filter(r => r.isValid)
     .reduce((sum, r) => sum + r.quantity * r.unitPrice, 0);
 
+  const visibleRows = showErrorsOnly ? parsedRows.filter(r => !r.isValid) : parsedRows;
+
   return (
     <div className="h-full flex flex-col bg-[#F7F7F5] overflow-y-auto p-4 max-w-5xl mx-auto w-full space-y-4">
       {/* Header Banner */}
@@ -247,15 +330,52 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleDownloadTemplate}
-          className="px-3.5 py-2 rounded-xl bg-[#252A27] text-[#A4DEC2] text-xs font-bold hover:bg-[#343B37] transition-all flex items-center space-x-1.5 shadow-2xs self-start sm:self-auto"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Télécharger le Modèle Excel</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setShowGuide(v => !v)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 shadow-2xs border ${
+              showGuide
+                ? 'bg-[#252A27] text-[#A4DEC2] border-[#252A27]'
+                : 'bg-white text-[#252A27] border-[#D9DDD8] hover:bg-[#ECEEEA]'
+            }`}
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            <span>Guide des colonnes</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="px-3.5 py-2 rounded-xl bg-[#252A27] text-[#A4DEC2] text-xs font-bold hover:bg-[#343B37] transition-all flex items-center space-x-1.5 shadow-2xs"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Télécharger le Modèle Excel</span>
+          </button>
+        </div>
       </div>
+
+      {/* Column Guide */}
+      {showGuide && (
+        <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 shadow-2xs animate-in fade-in">
+          <h3 className="font-serif font-bold text-sm text-[#252A27] pb-2 mb-3 border-b border-[#ECEEEA] flex items-center gap-1.5">
+            <HelpCircle className="w-4 h-4 text-[#555D58]" />
+            <span>Les 12 colonnes attendues, dans cet ordre</span>
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {COLUMN_GUIDE.map((c, i) => (
+              <div key={c.label} className="flex items-start gap-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl p-2.5">
+                <span className="w-5 h-5 shrink-0 rounded-full bg-[#252A27] text-[#A4DEC2] text-[10px] font-black flex items-center justify-center mt-0.5">
+                  {i + 1}
+                </span>
+                <div>
+                  <p className="text-xs font-bold text-[#252A27]">{c.label}</p>
+                  <p className="text-[10.5px] text-[#555D58]">{c.hint}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 flex items-center space-x-2 animate-in fade-in">
@@ -288,14 +408,30 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
       )}
 
       {/* Upload Zone */}
-      <div className="bg-white rounded-2xl border border-[#D9DDD8] p-6 text-center space-y-3 shadow-2xs">
-        <div className="w-12 h-12 rounded-2xl bg-[#ECEEEA] text-[#252A27] flex items-center justify-center mx-auto border border-[#D9DDD8]">
-          <FileSpreadsheet className="w-6 h-6" />
+      <div
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`bg-white rounded-2xl border-2 p-6 text-center space-y-3 shadow-2xs transition-all ${
+          isDragging ? 'border-[#8BCFAE] bg-[#F0FAF5] border-dashed' : 'border-dashed border-[#D9DDD8]'
+        }`}
+      >
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto border transition-colors ${
+          isDragging ? 'bg-[#A4DEC2] border-[#8BCFAE] text-[#252A27]' : 'bg-[#ECEEEA] border-[#D9DDD8] text-[#252A27]'
+        }`}>
+          {parsing ? <Loader2 className="w-6 h-6 animate-spin" /> : <FileSpreadsheet className="w-6 h-6" />}
         </div>
 
         <div>
           <h3 className="font-bold text-sm text-[#252A27]">
-            {fileName ? `Fichier sélectionné : ${fileName}` : 'Glissez-déposez votre fichier Excel ou CSV ici'}
+            {parsing
+              ? 'Lecture du fichier en cours...'
+              : fileName
+              ? `Fichier sélectionné : ${fileName}`
+              : isDragging
+              ? 'Déposez le fichier ici'
+              : 'Glissez-déposez votre fichier Excel ou CSV ici'}
           </h3>
           <p className="text-xs text-[#555D58] mt-1">
             Formats acceptés : .xlsx, .xls, .csv &bull; Respectez les colonnes du modèle
@@ -303,6 +439,7 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
         </div>
 
         <input
+          ref={fileInputRef}
           type="file"
           accept=".xlsx, .xls, .csv"
           onChange={handleFileUpload}
@@ -310,13 +447,26 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
           id="sales-file-upload-input"
         />
 
-        <label
-          htmlFor="sales-file-upload-input"
-          className="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-[#252A27] text-[#A4DEC2] text-xs font-black cursor-pointer hover:bg-[#343B37] transition-all shadow-xs"
-        >
-          <Upload className="w-4 h-4" />
-          <span>Parcourir les fichiers</span>
-        </label>
+        <div className="flex items-center justify-center gap-2">
+          <label
+            htmlFor="sales-file-upload-input"
+            className="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-[#252A27] text-[#A4DEC2] text-xs font-black cursor-pointer hover:bg-[#343B37] transition-all shadow-xs"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Parcourir les fichiers</span>
+          </label>
+
+          {fileName && (
+            <button
+              type="button"
+              onClick={handleResetFile}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl bg-[#F7F7F5] text-[#555D58] text-xs font-bold border border-[#D9DDD8] hover:bg-[#ECEEEA] hover:text-[#252A27] transition-all"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Réinitialiser</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Preview Table */}
@@ -341,6 +491,21 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
             </div>
           </div>
 
+          {invalidCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowErrorsOnly(v => !v)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                showErrorsOnly
+                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                  : 'bg-[#F7F7F5] text-[#555D58] border-[#D9DDD8] hover:bg-[#ECEEEA]'
+              }`}
+            >
+              <Filter className="w-3 h-3" />
+              <span>{showErrorsOnly ? `Affichage des erreurs uniquement (${invalidCount})` : 'Afficher uniquement les erreurs'}</span>
+            </button>
+          )}
+
           <div className="max-h-80 overflow-y-auto border border-[#D9DDD8] rounded-xl overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F2F3F0] text-[#555D58] font-bold border-b border-[#D9DDD8] sticky top-0">
@@ -357,35 +522,39 @@ export const SalesExcelCsvImport: React.FC<SalesExcelCsvImportProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#ECEEEA]">
-                {parsedRows.map(r => (
+                {visibleRows.map(r => (
                   <tr key={r.rowNumber} className={r.isValid ? 'hover:bg-[#F7F7F5]' : 'bg-rose-50/60'}>
-                    <td className="p-2.5 font-bold text-[#555D58]">#{r.rowNumber}</td>
-                    <td className="p-2.5">
+                    <td className="p-2.5 font-bold text-[#555D58] align-top">#{r.rowNumber}</td>
+                    <td className="p-2.5 align-top">
                       {r.isValid ? (
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold whitespace-nowrap">
                           Valide
                         </span>
                       ) : (
-                        <span
-                          className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold cursor-help"
-                          title={r.errors.join(', ')}
-                        >
-                          Erreur
-                        </span>
+                        <div className="space-y-1">
+                          <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold whitespace-nowrap inline-block">
+                            Erreur
+                          </span>
+                          <ul className="text-[10px] text-rose-700 space-y-0.5">
+                            {r.errors.map((e, i) => (
+                              <li key={i}>&bull; {e}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </td>
-                    <td className="p-2.5 font-mono text-[11px] text-[#555D58]">{r.date}</td>
-                    <td className="p-2.5 font-bold text-[#252A27]">
-                      {r.productName}
+                    <td className="p-2.5 font-mono text-[11px] text-[#555D58] align-top">{r.date}</td>
+                    <td className="p-2.5 font-bold text-[#252A27] align-top">
+                      {r.productName || <span className="text-rose-500 font-normal italic">(vide)</span>}
                       {r.variant && <span className="text-[10px] font-normal text-[#555D58] block">↳ {r.variant}</span>}
                     </td>
-                    <td className="p-2.5 text-center font-bold">{r.quantity}</td>
-                    <td className="p-2.5 text-right">{r.unitPrice.toFixed(3)} DT</td>
-                    <td className="p-2.5 text-right font-serif font-black text-[#252A27]">
+                    <td className="p-2.5 text-center font-bold align-top">{r.quantity}</td>
+                    <td className="p-2.5 text-right align-top">{r.unitPrice.toFixed(3)} DT</td>
+                    <td className="p-2.5 text-right font-serif font-black text-[#252A27] align-top">
                       {(r.quantity * r.unitPrice).toFixed(3)} DT
                     </td>
-                    <td className="p-2.5 text-[11px] uppercase font-bold text-[#555D58]">{r.paymentMethod}</td>
-                    <td className="p-2.5 text-[11px] text-[#555D58]">{r.consumptionType}</td>
+                    <td className="p-2.5 text-[11px] uppercase font-bold text-[#555D58] align-top">{r.paymentMethod}</td>
+                    <td className="p-2.5 text-[11px] text-[#555D58] align-top">{r.consumptionType}</td>
                   </tr>
                 ))}
               </tbody>

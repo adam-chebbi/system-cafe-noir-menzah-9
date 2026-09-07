@@ -96,6 +96,7 @@ export class SalesService {
     discountReason?: string;
     paymentMethod: string;
     consumptionType?: string;
+    shift?: 'matin' | 'apres_midi' | 'soir';
     ticketCount?: number;
     splitDetails?: { method: string; amount: number }[];
     amountReceived?: number;
@@ -180,6 +181,7 @@ export class SalesService {
       totalAmount,
       paymentMethod,
       consumptionType,
+      shift: data.shift,
       ticketCount,
       splitDetails: data.splitDetails,
       amountReceived: data.amountReceived,
