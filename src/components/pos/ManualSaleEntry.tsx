@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Product, User, Sale, PaymentMethod, ConsumptionType, SaleItem } from '../../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { Product, ProductOption, ProductOptionChoice, User, Sale, PaymentMethod, ConsumptionType, Ingredient } from '../../types';
 import { api } from '../../services/api';
 import {
   Plus,
@@ -18,7 +18,13 @@ import {
   Info,
   Sparkles,
   ClipboardCheck,
-  PenLine
+  PenLine,
+  Settings2,
+  ChevronDown,
+  ChevronUp,
+  CupSoda,
+  X,
+  Boxes
 } from 'lucide-react';
 
 type Shift = 'matin' | 'soir';
@@ -40,18 +46,61 @@ interface ManualSaleEntryProps {
   onSaleCreated: (sale: Sale) => void;
 }
 
+interface SelectedChoice {
+  optionId: string;
+  optionName: string;
+  choiceId: string;
+  choiceName: string;
+  priceModifier: number;
+}
+
 interface ManualSaleLine {
   productId?: string;
   productName: string;
-  variant?: string;
+  /** Variantes, extras et suppléments sélectionnés depuis la fiche produit (options.choices). */
+  selectedChoices: SelectedChoice[];
+  /** Variante libre, saisie manuellement uniquement pour un article hors catalogue. */
+  freeText: string;
   unitPrice: number;
   quantity: number;
   tvaRate: number;
   total: number;
 }
 
-const emptyLine = (): ManualSaleLine => ({ productName: '', variant: '', unitPrice: 0, quantity: 1, tvaRate: 7, total: 0 });
+interface PackagingSelection {
+  ingredientId: string;
+  ingredientName: string;
+  unit: string;
+  quantity: number;
+}
+
+const emptyLine = (): ManualSaleLine => ({
+  productName: '',
+  selectedChoices: [],
+  freeText: '',
+  unitPrice: 0,
+  quantity: 1,
+  tvaRate: 7,
+  total: 0
+});
 const isEmptyLine = (l: ManualSaleLine) => !l.productId && !l.productName.trim() && l.unitPrice === 0;
+
+/** Sélectionne par défaut le premier choix de chaque option à sélection unique (taille, lait...) ; les extras/suppléments (sélection multiple) restent optionnels. */
+const buildDefaultChoices = (prod: Product): SelectedChoice[] => {
+  const selections: SelectedChoice[] = [];
+  for (const opt of prod.options || []) {
+    if (opt.type === 'single' && opt.choices.length > 0) {
+      const c = opt.choices[0];
+      selections.push({ optionId: opt.id, optionName: opt.name, choiceId: c.id, choiceName: c.name, priceModifier: c.priceModifier || 0 });
+    }
+  }
+  return selections;
+};
+
+const computeLinePrice = (basePrice: number, selectedChoices: SelectedChoice[]) =>
+  Number((basePrice + selectedChoices.reduce((sum, c) => sum + c.priceModifier, 0)).toFixed(3));
+
+const choiceSignature = (choices: SelectedChoice[]) => choices.map(c => c.choiceId).sort().join('|');
 
 export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
   products,
@@ -65,11 +114,16 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
   const [cashierName, setCashierName] = useState<string>(currentUser?.name || 'Administrateur');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('especes');
   const [consumptionType, setConsumptionType] = useState<ConsumptionType>('sur_place');
-  const [ticketCount, setTicketCount] = useState<number>(1);
+  const [ticketCount, setTicketCount] = useState<number | ''>('');
   const [discount, setDiscount] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
 
   const [lines, setLines] = useState<ManualSaleLine[]>([emptyLine()]);
+  const [expandedLineIndex, setExpandedLineIndex] = useState<number | null>(null);
+
+  // Stock : ingrédients chargés pour la sélection des emballages à emporter
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [packagingSelections, setPackagingSelections] = useState<PackagingSelection[]>([]);
 
   // Validation step: 'edit' -> 'preview'
   const [step, setStep] = useState<'edit' | 'preview'>('edit');
@@ -80,6 +134,22 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollToTop = () => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+
+  useEffect(() => {
+    api.getIngredients()
+      .then(list => setIngredients(Array.isArray(list) ? list : []))
+      .catch(() => setIngredients([]));
+  }, []);
+
+  const packagingIngredients = ingredients.filter(i => i.category === 'packaging');
+
+  // Pré-sélectionne automatiquement les emballages disponibles dès le passage en "À emporter"
+  useEffect(() => {
+    if (consumptionType === 'a_emporter' && packagingSelections.length === 0 && packagingIngredients.length > 0) {
+      setPackagingSelections(packagingIngredients.map(i => ({ ingredientId: i.id, ingredientName: i.name, unit: i.unit, quantity: 1 })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consumptionType, packagingIngredients.length]);
 
   // Calculations
   const rawSubtotal = lines.reduce((sum, l) => sum + (l.unitPrice * l.quantity) / (1 + l.tvaRate / 100), 0);
@@ -92,50 +162,47 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
 
   const handleAddLine = () => {
     setLines([...lines, emptyLine()]);
+    setExpandedLineIndex(null);
   };
 
   const handleRemoveLine = (index: number) => {
     if (lines.length <= 1) return;
     setLines(lines.filter((_, i) => i !== index));
+    setExpandedLineIndex(null);
   };
 
   const handleProductSelect = (index: number, productId: string) => {
     const prod = products.find(p => p.id === productId);
     const updated = [...lines];
     if (prod) {
-      const defaultVariant = prod.options && prod.options.length > 0 && prod.options[0].choices.length > 0
-        ? prod.options[0].choices[0].name
-        : '';
-      const priceModifier = prod.options && prod.options.length > 0 && prod.options[0].choices.length > 0
-        ? prod.options[0].choices[0].priceModifier || 0
-        : 0;
-
-      const finalPrice = prod.price + priceModifier;
+      const selectedChoices = buildDefaultChoices(prod);
+      const finalPrice = computeLinePrice(prod.price, selectedChoices);
+      const quantity = updated[index].quantity || 1;
 
       updated[index] = {
         productId: prod.id,
         productName: prod.name,
-        variant: defaultVariant,
+        selectedChoices,
+        freeText: '',
         unitPrice: finalPrice,
-        quantity: updated[index].quantity || 1,
+        quantity,
         tvaRate: prod.tvaRate || 7,
-        total: Number(((updated[index].quantity || 1) * finalPrice).toFixed(3))
+        total: Number((quantity * finalPrice).toFixed(3))
       };
     }
     setLines(updated);
   };
 
-  /** Ajout rapide en un geste depuis les chips catalogue : remplit la ligne vide en cours, ou incrémente si c'est déjà le dernier article ajouté. */
+  /** Ajout rapide en un geste depuis les chips catalogue : remplit la ligne vide en cours, ou incrémente si c'est déjà le dernier article ajouté (mêmes options). */
   const handleQuickAddProduct = (product: Product) => {
-    const defaultVariant = product.options?.[0]?.choices?.[0]?.name || '';
-    const priceModifier = product.options?.[0]?.choices?.[0]?.priceModifier || 0;
-    const finalPrice = product.price + priceModifier;
+    const selectedChoices = buildDefaultChoices(product);
+    const finalPrice = computeLinePrice(product.price, selectedChoices);
 
     setLines(prev => {
       const lastIdx = prev.length - 1;
       const last = prev[lastIdx];
 
-      if (last.productId === product.id && (last.variant || '') === defaultVariant) {
+      if (last.productId === product.id && choiceSignature(last.selectedChoices) === choiceSignature(selectedChoices)) {
         const newQty = last.quantity + 1;
         const updated = [...prev];
         updated[lastIdx] = { ...last, quantity: newQty, total: Number((newQty * last.unitPrice).toFixed(3)) };
@@ -145,7 +212,8 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
       const newLine: ManualSaleLine = {
         productId: product.id,
         productName: product.name,
-        variant: defaultVariant,
+        selectedChoices,
+        freeText: '',
         unitPrice: finalPrice,
         quantity: 1,
         tvaRate: product.tvaRate || 7,
@@ -159,30 +227,35 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
     });
   };
 
-  const handleVariantSelect = (index: number, variantName: string) => {
+  /** Bascule un choix d'option pour une ligne : remplacement pour une option à sélection unique (taille...), ajout/retrait pour une option à sélection multiple (extras/suppléments). */
+  const handleToggleChoice = (index: number, option: ProductOption, choice: ProductOptionChoice) => {
     const updated = [...lines];
-    const line = updated[index];
-    line.variant = variantName;
+    const line = { ...updated[index] };
+    const prod = products.find(p => p.id === line.productId);
+    if (!prod) return;
 
-    if (line.productId) {
-      const prod = products.find(p => p.id === line.productId);
-      if (prod && prod.options) {
-        let modifier = 0;
-        for (const opt of prod.options) {
-          const choice = opt.choices.find(c => c.name === variantName);
-          if (choice) {
-            modifier = choice.priceModifier || 0;
-            break;
-          }
-        }
-        line.unitPrice = prod.price + modifier;
-        line.total = Number((line.quantity * line.unitPrice).toFixed(3));
+    let selections = [...line.selectedChoices];
+    const alreadySelected = selections.some(c => c.choiceId === choice.id);
+
+    if (option.type === 'single') {
+      selections = selections.filter(c => c.optionId !== option.id);
+      if (!alreadySelected) {
+        selections.push({ optionId: option.id, optionName: option.name, choiceId: choice.id, choiceName: choice.name, priceModifier: choice.priceModifier || 0 });
       }
+    } else {
+      selections = alreadySelected
+        ? selections.filter(c => c.choiceId !== choice.id)
+        : [...selections, { optionId: option.id, optionName: option.name, choiceId: choice.id, choiceName: choice.name, priceModifier: choice.priceModifier || 0 }];
     }
+
+    line.selectedChoices = selections;
+    line.unitPrice = computeLinePrice(prod.price, selections);
+    line.total = Number((line.quantity * line.unitPrice).toFixed(3));
+    updated[index] = line;
     setLines(updated);
   };
 
-  const handleLineChange = (index: number, field: keyof ManualSaleLine, val: any) => {
+  const handleLineChange = (index: number, field: 'quantity' | 'unitPrice' | 'productName' | 'freeText' | 'tvaRate', val: any) => {
     const updated = [...lines];
     if (field === 'quantity') {
       const q = Math.max(1, parseInt(val) || 1);
@@ -194,12 +267,26 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
       updated[index].total = Number((updated[index].quantity * p).toFixed(3));
     } else if (field === 'productName') {
       updated[index].productName = val;
-    } else if (field === 'variant') {
-      updated[index].variant = val;
+    } else if (field === 'freeText') {
+      updated[index].freeText = val;
     } else if (field === 'tvaRate') {
       updated[index].tvaRate = parseFloat(val) || 7;
     }
     setLines(updated);
+  };
+
+  const handlePackagingQtyChange = (ingredientId: string, delta: number) => {
+    setPackagingSelections(prev => prev.map(p => p.ingredientId === ingredientId ? { ...p, quantity: Math.max(0, p.quantity + delta) } : p));
+  };
+
+  const handleRemovePackaging = (ingredientId: string) => {
+    setPackagingSelections(prev => prev.filter(p => p.ingredientId !== ingredientId));
+  };
+
+  const handleAddPackagingItem = (ingredientId: string) => {
+    const ing = ingredients.find(i => i.id === ingredientId);
+    if (!ing) return;
+    setPackagingSelections(prev => prev.some(p => p.ingredientId === ingredientId) ? prev : [...prev, { ingredientId: ing.id, ingredientName: ing.name, unit: ing.unit, quantity: 1 }]);
   };
 
   const handleGoToPreview = () => {
@@ -224,21 +311,37 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
     try {
       const now = new Date();
       const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const activePackaging = consumptionType === 'a_emporter'
+        ? packagingSelections.filter(p => p.quantity > 0).map(p => ({ ingredientId: p.ingredientId, quantity: p.quantity }))
+        : undefined;
+
       const payload = {
         createdAt: new Date(`${saleDateOnly}T${currentTime}`).toISOString(),
         tableNumber: consumptionType === 'sur_place' ? tableNumber : 'À emporter',
         consumptionType,
         shift,
         paymentMethod,
-        ticketCount: Math.max(1, ticketCount),
+        ticketCount: ticketCount === '' ? undefined : ticketCount,
         items: lines.map(l => ({
           productId: l.productId,
           productName: l.productName,
-          variant: l.variant || undefined,
+          variant: l.selectedChoices.length > 0
+            ? l.selectedChoices.map(c => c.choiceName).join(', ')
+            : (l.freeText || undefined),
+          options: l.selectedChoices.length > 0
+            ? l.selectedChoices.map(c => ({
+                optionId: c.optionId,
+                optionName: c.optionName,
+                choiceId: c.choiceId,
+                choiceName: c.choiceName,
+                priceModifier: c.priceModifier
+              }))
+            : undefined,
           unitPrice: l.unitPrice,
           quantity: l.quantity,
           tvaRate: l.tvaRate
         })),
+        packaging: activePackaging,
         discount,
         cashierId: currentUser?.id || 'usr_admin',
         cashierName: cashierName || currentUser?.name || 'Administrateur',
@@ -249,10 +352,11 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
       const createdSale = await api.createManualSale(payload);
       onSaleCreated(createdSale);
 
-      setSuccessMsg(`Vente #${createdSale.saleNumber} (${createdSale.totalAmount.toFixed(3)} DT) enregistrée avec succès !`);
+      setSuccessMsg(`Vente #${createdSale.saleNumber} (${createdSale.totalAmount.toFixed(3)} DT) enregistrée avec succès ! Stock mis à jour automatiquement.`);
 
-      // Reset form
+      // Reset form (la date, le service et les emballages sélectionnés sont conservés pour une saisie rapide et consécutive)
       setLines([emptyLine()]);
+      setExpandedLineIndex(null);
       setDiscount(0);
       setNotes('');
       setStep('edit');
@@ -279,7 +383,7 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
               Saisie Manuelle d'une Vente
             </h2>
             <p className="text-xs text-[#555D58]">
-              Enregistrement comptable avec traçabilité complète des articles, variantes, tickets et modes de règlement
+              Articles, variantes, extras et suppléments &mdash; déduction automatique du stock à la confirmation
             </p>
           </div>
 
@@ -372,28 +476,31 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                   </select>
                 </div>
 
-                {/* Nombre de Tickets */}
+                {/* Nombre de Tickets (optionnel) */}
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#555D58] flex items-center space-x-1">
-                    <Receipt className="w-3.5 h-3.5" />
-                    <span>Nombre de Tickets :</span>
+                  <label className="text-[11px] font-bold text-[#555D58] flex items-center gap-1">
+                    <Receipt className="w-3.5 h-3.5 shrink-0" />
+                    <span>Nombre de Tickets <span className="font-medium text-[#929A95]">(optionnel)</span> :</span>
+                    <span className="relative inline-flex group">
+                      <Info className="w-3.5 h-3.5 text-[#929A95] cursor-help shrink-0" />
+                      <span className="pointer-events-none absolute z-30 hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-56 p-2.5 rounded-lg bg-[#252A27] text-[#F7F7F5] text-[10.5px] leading-snug shadow-lg">
+                        Nombre de tickets de caisse (clients servis séparément) regroupés dans cette saisie. Sert au calcul du panier moyen dans les rapports — laissez vide pour 1 par défaut.
+                        <span className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-[#252A27] rotate-45 -mt-1" />
+                      </span>
+                    </span>
                   </label>
                   <input
                     type="number"
                     min="1"
+                    placeholder="1 (par défaut)"
                     value={ticketCount}
-                    onChange={e => setTicketCount(Math.max(1, parseInt(e.target.value) || 1))}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setTicketCount(v === '' ? '' : Math.max(1, parseInt(v) || 1));
+                    }}
                     className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-center text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
                   />
                 </div>
-              </div>
-
-              {/* Explication : à quoi sert le Nombre de Tickets */}
-              <div className="flex items-start space-x-1.5 text-[10.5px] text-[#555D58] bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg px-2.5 py-2">
-                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#555D58]" />
-                <span>
-                  <strong className="text-[#252A27]">Nombre de Tickets</strong> : le nombre de tickets de caisse (clients servis séparément) regroupés dans cette saisie. Il sert à calculer le panier moyen et le nombre de couverts dans les rapports — laissez <strong>1</strong> si cette saisie ne représente qu'un seul client/ticket.
-                </span>
               </div>
 
               {/* Service (Shift) */}
@@ -447,15 +554,15 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
               </div>
             </div>
 
-            {/* 2. Lignes d'articles et variantes */}
+            {/* 2. Lignes d'articles, variantes et extras */}
             <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 space-y-3 shadow-2xs">
               <div className="flex justify-between items-center pb-2 border-b border-[#ECEEEA]">
                 <div>
                   <h3 className="font-serif font-bold text-sm text-[#252A27]">
-                    2. Articles, Variantes & Tarification ({itemCount})
+                    2. Articles, Variantes & Extras ({itemCount})
                   </h3>
                   <p className="text-[11px] text-[#555D58]">
-                    Touchez un article ci-dessous pour l'ajouter instantanément, ou saisissez une ligne libre
+                    Touchez un article pour l'ajouter instantanément, puis personnalisez variantes et extras via le bouton Options
                   </p>
                 </div>
 
@@ -499,142 +606,272 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                   const availableOptions = selectedProd?.options || [];
                   const invalid = validationAttempted && isLineInvalid(line);
                   const isLast = idx === lines.length - 1;
+                  const isExpanded = expandedLineIndex === idx;
 
                   return (
                     <div
                       key={idx}
-                      className={`p-3 rounded-xl border grid grid-cols-12 gap-2.5 items-center text-xs transition-colors animate-in fade-in duration-150 ${
+                      className={`rounded-xl border overflow-hidden transition-colors animate-in fade-in duration-150 ${
                         invalid ? 'bg-rose-50 border-rose-300' : 'bg-[#F7F7F5] border-[#D9DDD8]'
                       }`}
                     >
-                      {/* Catalog select */}
-                      <div className="col-span-12 sm:col-span-3">
-                        <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Produit Catalogue :</label>
-                        <select
-                          onChange={e => handleProductSelect(idx, e.target.value)}
-                          value={line.productId || ''}
-                          className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-medium text-[#252A27]"
-                        >
-                          <option value="">-- Choisir du catalogue (ou libre) --</option>
-                          {products.map(p => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} ({p.price.toFixed(3)} DT)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Designation */}
-                      <div className="col-span-12 sm:col-span-3">
-                        <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Nom de l'article :</label>
-                        <input
-                          type="text"
-                          placeholder="Ex: Café Espresso, Croissant..."
-                          value={line.productName}
-                          onChange={e => handleLineChange(idx, 'productName', e.target.value)}
-                          className={`w-full p-2 bg-white border rounded-lg text-xs font-bold text-[#252A27] ${invalid && !line.productName.trim() ? 'border-rose-400' : 'border-[#D9DDD8]'}`}
-                        />
-                      </div>
-
-                      {/* Variant / Option */}
-                      <div className="col-span-6 sm:col-span-2">
-                        <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Variante :</label>
-                        {availableOptions.length > 0 ? (
+                      <div className="p-3 grid grid-cols-12 gap-2.5 items-center text-xs">
+                        {/* Catalog select */}
+                        <div className="col-span-12 sm:col-span-3">
+                          <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Produit Catalogue :</label>
                           <select
-                            value={line.variant || ''}
-                            onChange={e => handleVariantSelect(idx, e.target.value)}
-                            className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
+                            onChange={e => handleProductSelect(idx, e.target.value)}
+                            value={line.productId || ''}
+                            className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-medium text-[#252A27]"
                           >
-                            <option value="">Standard</option>
-                            {availableOptions.flatMap(opt =>
-                              opt.choices.map(c => (
-                                <option key={c.id} value={c.name}>
-                                  {c.name} {c.priceModifier ? `(+${c.priceModifier.toFixed(3)})` : ''}
-                                </option>
-                              ))
-                            )}
+                            <option value="">-- Choisir du catalogue (ou libre) --</option>
+                            {products.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} ({p.price.toFixed(3)} DT)
+                              </option>
+                            ))}
                           </select>
-                        ) : (
+                        </div>
+
+                        {/* Designation */}
+                        <div className="col-span-12 sm:col-span-3">
+                          <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">Nom de l'article :</label>
                           <input
                             type="text"
-                            placeholder="Simple, Grand..."
-                            value={line.variant || ''}
-                            onChange={e => handleLineChange(idx, 'variant', e.target.value)}
-                            className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
+                            placeholder="Ex: Café Espresso, Croissant..."
+                            value={line.productName}
+                            onChange={e => handleLineChange(idx, 'productName', e.target.value)}
+                            className={`w-full p-2 bg-white border rounded-lg text-xs font-bold text-[#252A27] ${invalid && !line.productName.trim() ? 'border-rose-400' : 'border-[#D9DDD8]'}`}
                           />
-                        )}
-                      </div>
+                        </div>
 
-                      {/* Quantité (stepper) */}
-                      <div className="col-span-6 sm:col-span-2">
-                        <label className="text-[10px] font-bold text-[#555D58] block mb-0.5 text-center">Qté :</label>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleLineChange(idx, 'quantity', String(Math.max(1, line.quantity - 1)))}
-                            className="w-7 h-7 shrink-0 rounded-lg bg-white border border-[#D9DDD8] flex items-center justify-center text-[#252A27] hover:bg-[#ECEEEA] active:scale-95 transition-all cursor-pointer"
-                            aria-label="Diminuer la quantité"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
+                        {/* Options / Variante libre */}
+                        <div className="col-span-6 sm:col-span-2">
+                          <label className="text-[10px] font-bold text-[#555D58] block mb-0.5">
+                            {availableOptions.length > 0 ? 'Options :' : 'Variante :'}
+                          </label>
+                          {availableOptions.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedLineIndex(isExpanded ? null : idx)}
+                              className={`w-full p-2 rounded-lg border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                                line.selectedChoices.length > 0
+                                  ? 'bg-[#A4DEC2]/25 border-[#8BCFAE] text-[#252A27]'
+                                  : 'bg-white border-[#D9DDD8] text-[#555D58] hover:bg-[#ECEEEA]'
+                              }`}
+                            >
+                              <Settings2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>Options</span>
+                              {line.selectedChoices.length > 0 && (
+                                <span className="w-4 h-4 rounded-full bg-[#252A27] text-[#A4DEC2] text-[9px] font-black flex items-center justify-center shrink-0">
+                                  {line.selectedChoices.length}
+                                </span>
+                              )}
+                              {isExpanded ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
+                            </button>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="Simple, Grand..."
+                              value={line.freeText}
+                              onChange={e => handleLineChange(idx, 'freeText', e.target.value)}
+                              className="w-full p-2 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#252A27]"
+                            />
+                          )}
+                        </div>
+
+                        {/* Quantité (stepper) */}
+                        <div className="col-span-6 sm:col-span-2">
+                          <label className="text-[10px] font-bold text-[#555D58] block mb-0.5 text-center">Qté :</label>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleLineChange(idx, 'quantity', String(Math.max(1, line.quantity - 1)))}
+                              className="w-7 h-7 shrink-0 rounded-lg bg-white border border-[#D9DDD8] flex items-center justify-center text-[#252A27] hover:bg-[#ECEEEA] active:scale-95 transition-all cursor-pointer"
+                              aria-label="Diminuer la quantité"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              value={line.quantity}
+                              onChange={e => handleLineChange(idx, 'quantity', e.target.value)}
+                              className="w-full min-w-0 p-1.5 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-center text-[#252A27]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleLineChange(idx, 'quantity', String(line.quantity + 1))}
+                              className="w-7 h-7 shrink-0 rounded-lg bg-white border border-[#D9DDD8] flex items-center justify-center text-[#252A27] hover:bg-[#ECEEEA] active:scale-95 transition-all cursor-pointer"
+                              aria-label="Augmenter la quantité"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Prix unitaire */}
+                        <div className="col-span-6 sm:col-span-1">
+                          <label className="text-[10px] font-bold text-[#555D58] block mb-0.5 text-right">Prix :</label>
                           <input
                             type="number"
-                            min="1"
-                            value={line.quantity}
-                            onChange={e => handleLineChange(idx, 'quantity', e.target.value)}
-                            className="w-full min-w-0 p-1.5 bg-white border border-[#D9DDD8] rounded-lg text-xs font-bold text-center text-[#252A27]"
+                            step="0.1"
+                            value={line.unitPrice || ''}
+                            onChange={e => handleLineChange(idx, 'unitPrice', e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && isLast) {
+                                e.preventDefault();
+                                handleAddLine();
+                              }
+                            }}
+                            placeholder="0.000"
+                            className={`w-full p-2 bg-white border rounded-lg text-xs font-bold text-right text-[#252A27] ${invalid && line.unitPrice <= 0 ? 'border-rose-400' : 'border-[#D9DDD8]'}`}
                           />
-                          <button
-                            type="button"
-                            onClick={() => handleLineChange(idx, 'quantity', String(line.quantity + 1))}
-                            className="w-7 h-7 shrink-0 rounded-lg bg-white border border-[#D9DDD8] flex items-center justify-center text-[#252A27] hover:bg-[#ECEEEA] active:scale-95 transition-all cursor-pointer"
-                            aria-label="Augmenter la quantité"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+                        </div>
+
+                        {/* Total & Delete */}
+                        <div className="col-span-6 sm:col-span-1 flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-1 pt-1 sm:pt-4">
+                          <span className="font-serif font-black text-xs text-[#252A27] whitespace-nowrap">
+                            {line.total.toFixed(3)} DT
+                          </span>
+                          {lines.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveLine(idx)}
+                              className="p-1.5 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Supprimer cette ligne"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      {/* Prix unitaire */}
-                      <div className="col-span-6 sm:col-span-1">
-                        <label className="text-[10px] font-bold text-[#555D58] block mb-0.5 text-right">Prix :</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={line.unitPrice || ''}
-                          onChange={e => handleLineChange(idx, 'unitPrice', e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' && isLast) {
-                              e.preventDefault();
-                              handleAddLine();
-                            }
-                          }}
-                          placeholder="0.000"
-                          className={`w-full p-2 bg-white border rounded-lg text-xs font-bold text-right text-[#252A27] ${invalid && line.unitPrice <= 0 ? 'border-rose-400' : 'border-[#D9DDD8]'}`}
-                        />
-                      </div>
+                      {/* Résumé des options sélectionnées, visible même repliée */}
+                      {!isExpanded && line.selectedChoices.length > 0 && (
+                        <div className="px-3 pb-2.5 -mt-1 flex flex-wrap gap-1">
+                          {line.selectedChoices.map(c => (
+                            <span key={c.choiceId} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-[#D9DDD8] text-[#555D58]">
+                              {c.choiceName}{c.priceModifier !== 0 && ` (${c.priceModifier > 0 ? '+' : ''}${c.priceModifier.toFixed(3)})`}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
-                      {/* Total & Delete */}
-                      <div className="col-span-6 sm:col-span-1 flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-1 pt-1 sm:pt-4">
-                        <span className="font-serif font-black text-xs text-[#252A27] whitespace-nowrap">
-                          {line.total.toFixed(3)} DT
-                        </span>
-                        {lines.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLine(idx)}
-                            className="p-1.5 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Supprimer cette ligne"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
+                      {/* Panneau Options : variantes (sélection unique) et extras/suppléments (sélection multiple) */}
+                      {isExpanded && availableOptions.length > 0 && (
+                        <div className="border-t border-[#D9DDD8] bg-white p-3 space-y-3 animate-in fade-in duration-150">
+                          {availableOptions.map(opt => (
+                            <div key={opt.id}>
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <span className="text-[10px] font-bold text-[#252A27] uppercase tracking-wide">{opt.name}</span>
+                                <span className="text-[9px] text-[#929A95] font-medium">
+                                  {opt.type === 'multiple' ? '(extras — sélection multiple)' : '(sélection unique)'}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {opt.choices.map(choice => {
+                                  const selected = line.selectedChoices.some(c => c.choiceId === choice.id);
+                                  return (
+                                    <button
+                                      key={choice.id}
+                                      type="button"
+                                      onClick={() => handleToggleChoice(idx, opt, choice)}
+                                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold transition-all cursor-pointer active:scale-95 ${
+                                        selected
+                                          ? 'bg-[#252A27] text-[#A4DEC2] border-[#252A27]'
+                                          : 'bg-[#F7F7F5] text-[#555D58] border-[#D9DDD8] hover:bg-[#ECEEEA] hover:text-[#252A27]'
+                                      }`}
+                                    >
+                                      <span>{choice.name}</span>
+                                      {choice.priceModifier !== 0 && (
+                                        <span className={selected ? 'text-[#A4DEC2]' : 'text-[#929A95]'}>
+                                          {choice.priceModifier > 0 ? '+' : ''}{choice.priceModifier.toFixed(3)}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
+
+            {/* Emballages à emporter — déduits automatiquement du stock, uniquement pour les ventes à emporter */}
+            {consumptionType === 'a_emporter' && (
+              <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 space-y-3 shadow-2xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-[#ECEEEA]">
+                  <CupSoda className="w-4 h-4 text-[#555D58] shrink-0" />
+                  <div>
+                    <h3 className="font-serif font-bold text-sm text-[#252A27]">Emballages à Emporter</h3>
+                    <p className="text-[11px] text-[#555D58]">Gobelets, couvercles et emballages déduits automatiquement du stock à la confirmation</p>
+                  </div>
+                </div>
+
+                {packagingIngredients.length === 0 ? (
+                  <p className="text-xs text-[#929A95] italic flex items-center gap-1.5">
+                    <Boxes className="w-3.5 h-3.5 shrink-0" />
+                    Aucun ingrédient de catégorie "Emballages & Consommables" configuré dans le Stock — aucune déduction automatique ne sera appliquée.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {packagingSelections.map(p => (
+                        <div key={p.ingredientId} className="flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-xl bg-[#F7F7F5] border border-[#D9DDD8]">
+                          <span className="text-xs font-bold text-[#252A27]">{p.ingredientName}</span>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handlePackagingQtyChange(p.ingredientId, -1)}
+                              className="w-5 h-5 rounded bg-white border border-[#D9DDD8] flex items-center justify-center hover:bg-[#ECEEEA] cursor-pointer"
+                              aria-label="Diminuer"
+                            >
+                              <Minus className="w-2.5 h-2.5" />
+                            </button>
+                            <span className="text-xs font-bold w-5 text-center">{p.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => handlePackagingQtyChange(p.ingredientId, 1)}
+                              className="w-5 h-5 rounded bg-white border border-[#D9DDD8] flex items-center justify-center hover:bg-[#ECEEEA] cursor-pointer"
+                              aria-label="Augmenter"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePackaging(p.ingredientId)}
+                            className="p-1 text-rose-500 hover:bg-rose-50 rounded cursor-pointer"
+                            title="Retirer cet emballage"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {packagingIngredients.some(i => !packagingSelections.some(p => p.ingredientId === i.id)) && (
+                      <select
+                        onChange={e => { if (e.target.value) { handleAddPackagingItem(e.target.value); e.target.value = ''; } }}
+                        value=""
+                        className="p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-lg text-xs font-bold text-[#555D58]"
+                      >
+                        <option value="">+ Ajouter un emballage...</option>
+                        {packagingIngredients.filter(i => !packagingSelections.some(p => p.ingredientId === i.id)).map(i => (
+                          <option key={i.id} value={i.id}>{i.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* 3. Remise & Notes */}
             <div className="bg-white rounded-2xl border border-[#D9DDD8] p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-4 shadow-2xs">
@@ -689,7 +926,7 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
               <div className="flex items-center space-x-2 text-amber-900 bg-amber-50 p-3 rounded-xl border border-amber-300 text-xs">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-700" />
                 <span>
-                  <strong>Contrôle de validation obligatoire :</strong> Veuillez vérifier les détails du ticket avant enregistrement comptable dans le système Café Noir.
+                  <strong>Contrôle de validation obligatoire :</strong> Veuillez vérifier les détails du ticket avant enregistrement comptable dans le système Café Noir. Le stock sera déduit automatiquement à la confirmation.
                 </span>
               </div>
 
@@ -704,8 +941,13 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                     {consumptionType === 'sur_place' ? `Sur place${tableNumber ? ` (${tableNumber})` : ''}` : 'À emporter'} &bull; Caissier: {cashierName}
                   </p>
                   <p className="text-[10px] font-bold text-[#252A27] mt-0.5">
-                    Nombre de ticket(s) : {ticketCount}
+                    Nombre de ticket(s) : {ticketCount === '' ? '1 (par défaut)' : ticketCount}
                   </p>
+                  {consumptionType === 'a_emporter' && packagingSelections.filter(p => p.quantity > 0).length > 0 && (
+                    <p className="text-[10px] text-[#555D58] mt-0.5">
+                      Emballages : {packagingSelections.filter(p => p.quantity > 0).map(p => `${p.quantity}x ${p.ingredientName}`).join(', ')}
+                    </p>
+                  )}
                 </div>
 
                 {/* Items List */}
@@ -714,8 +956,11 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                     <div key={idx} className="flex justify-between items-start">
                       <div>
                         <span>{l.quantity}x {l.productName}</span>
-                        {l.variant && (
-                          <span className="text-[10px] text-[#555D58] block ml-3">↳ Variante : {l.variant}</span>
+                        {l.selectedChoices.length > 0 && (
+                          <span className="text-[10px] text-[#555D58] block ml-3">↳ {l.selectedChoices.map(c => c.choiceName).join(', ')}</span>
+                        )}
+                        {l.freeText && (
+                          <span className="text-[10px] text-[#555D58] block ml-3">↳ {l.freeText}</span>
                         )}
                       </div>
                       <span className="font-bold whitespace-nowrap">{l.total.toFixed(3)} DT</span>

@@ -254,6 +254,9 @@ export interface OrderItemOption {
   optionName: string;
   choiceName: string;
   priceModifier: number;
+  /** Références vers la fiche produit d'origine, utilisées pour résoudre la déduction de stock d'un extra/supplément. */
+  optionId?: string;
+  choiceId?: string;
 }
 
 export interface OrderItem {
@@ -308,6 +311,8 @@ export interface SaleItem {
   productId?: string;
   productName?: string;
   variant?: string;
+  /** Options/extras/suppléments sélectionnés (fiche produit), utilisés pour la déduction de stock détaillée. */
+  options?: OrderItemOption[];
   quantity: number;
   unitPrice?: number;
   tvaRate?: number;

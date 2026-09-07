@@ -1,6 +1,7 @@
 import { db } from '../db/database.js';
-import { Sale, SaleItem, PaymentMethod, ConsumptionType, CashRegisterSession, CashMovement, ClosingRegisterPayload, StockMovement, Expense, StockZone } from '../types/index.js';
+import { Sale, SaleItem, PaymentMethod, ConsumptionType, CashRegisterSession, CashMovement, ClosingRegisterPayload, StockMovement, Expense, StockZone, OrderItemOption } from '../types/index.js';
 import { ExpenseService } from './expenseService.js';
+import { StockService } from './stockService.js';
 
 export class SalesService {
   public static getSales(filter?: {
@@ -88,10 +89,13 @@ export class SalesService {
       productId?: string;
       productName: string;
       variant?: string;
+      options?: OrderItemOption[];
       unitPrice: number;
       quantity: number;
       tvaRate?: number;
     }[];
+    /** Emballages à emporter (gobelets, couvercles...) à déduire du stock en plus des articles vendus. */
+    packaging?: { ingredientId: string; quantity: number }[];
     discount?: number;
     discountReason?: string;
     paymentMethod: string;
@@ -142,6 +146,7 @@ export class SalesService {
         productId: item.productId || (product ? product.id : undefined),
         productName: item.productName || (product ? product.name : 'Article'),
         variant: item.variant || undefined,
+        options: item.options && item.options.length > 0 ? item.options : undefined,
         quantity,
         unitPrice,
         tvaRate: rate,
@@ -220,7 +225,66 @@ export class SalesService {
       data.cashierName
     );
 
+    // La vente comptable est déjà enregistrée : une erreur de déduction de stock (fiche technique
+    // absente, ingrédient supprimé...) ne doit jamais faire échouer ou annuler la vente elle-même.
+    try {
+      this.deductStockForSale(data.items, consumptionType, data.packaging, saleNumber, data.cashierName);
+    } catch (err) {
+      console.error(`Déduction de stock échouée pour la vente ${saleNumber}:`, err);
+    }
+
     return newSale;
+  }
+
+  /**
+   * Déduit du stock, pour une vente confirmée : la fiche technique de chaque produit vendu, les
+   * extras/suppléments sélectionnés (ingredientDeduction configuré sur le choix d'option), et — pour
+   * les ventes à emporter — les emballages (gobelets, couvercles...) choisis par l'opérateur.
+   */
+  private static deductStockForSale(
+    items: { productId?: string; quantity: number; options?: OrderItemOption[] }[],
+    consumptionType: ConsumptionType,
+    packaging: { ingredientId: string; quantity: number }[] | undefined,
+    saleNumber: string,
+    performedBy: string
+  ): void {
+    const products = db.get('products') || [];
+    const extrasTotals = new Map<string, number>();
+
+    for (const item of items) {
+      const quantity = Math.max(1, item.quantity);
+
+      if (item.productId) {
+        StockService.deductStockForProduct(item.productId, quantity, saleNumber, performedBy);
+      }
+
+      if (item.productId && item.options && item.options.length > 0) {
+        const product = products.find(p => p.id === item.productId);
+        if (product) {
+          for (const opt of item.options) {
+            if (!opt.optionId || !opt.choiceId) continue;
+            const productOption = product.options?.find(o => o.id === opt.optionId);
+            const choice = productOption?.choices.find(c => c.id === opt.choiceId);
+            const deduction = choice?.ingredientDeduction;
+            if (deduction && deduction.ingredientId && deduction.quantity > 0) {
+              const total = deduction.quantity * quantity;
+              extrasTotals.set(deduction.ingredientId, (extrasTotals.get(deduction.ingredientId) || 0) + total);
+            }
+          }
+        }
+      }
+    }
+
+    for (const [ingredientId, quantity] of extrasTotals) {
+      StockService.deductIngredientQuantity(ingredientId, quantity, saleNumber, 'Extra/supplément vendu', performedBy);
+    }
+
+    if (consumptionType === 'a_emporter' && packaging && packaging.length > 0) {
+      for (const pack of packaging) {
+        if (!pack.ingredientId || pack.quantity <= 0) continue;
+        StockService.deductIngredientQuantity(pack.ingredientId, pack.quantity, saleNumber, 'Emballage à emporter', performedBy, 'Vente à emporter');
+      }
+    }
   }
 
   /**

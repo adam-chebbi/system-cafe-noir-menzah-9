@@ -192,6 +192,60 @@ export class StockService {
   }
 
   /**
+   * Déduit directement une quantité d'un ingrédient précis (hors fiche technique), pour les extras/
+   * suppléments configurés au niveau d'un choix d'option, ou les emballages à emporter (gobelets,
+   * couvercles...). Silencieux si l'ingrédient est introuvable ou la quantité nulle/négative.
+   */
+  public static deductIngredientQuantity(
+    ingredientId: string,
+    quantity: number,
+    referenceDoc: string,
+    reason: string,
+    performedBy: string,
+    origin: string = 'Vente POS'
+  ): void {
+    if (!ingredientId || quantity <= 0) return;
+
+    const ingredients = db.get('ingredients');
+    const movements = db.get('stockMovements');
+    const zone: StockZone = 'reserve_principale';
+
+    const ingIndex = ingredients.findIndex(i => i.id === ingredientId);
+    if (ingIndex === -1) return;
+
+    const ing = ingredients[ingIndex];
+    const prevZoneStock = ing.stockByZone[zone];
+    const newZoneStock = Number((prevZoneStock - quantity).toFixed(4));
+
+    ing.stockByZone[zone] = newZoneStock;
+    this.recomputeTotal(ing);
+    ing.updatedAt = new Date().toISOString();
+
+    const movement: StockMovement = {
+      id: `sm_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      ingredientId: ing.id,
+      ingredientName: ing.name,
+      type: 'out_sale',
+      zone,
+      quantity: -quantity,
+      unit: ing.unit,
+      previousStock: prevZoneStock,
+      newStock: newZoneStock,
+      unitCost: ing.costPerUnit,
+      totalValue: Number((quantity * ing.costPerUnit).toFixed(2)),
+      origin,
+      referenceDoc,
+      reason,
+      performedBy,
+      createdAt: new Date().toISOString()
+    };
+    movements.unshift(movement);
+
+    db.set('ingredients', ingredients);
+    db.set('stockMovements', movements);
+  }
+
+  /**
    * Réception de stock (manuelle ou achat), avec Coût Moyen Pondéré et lot optionnel.
    */
   public static addStock(params: AddStockParams): StockMovement {
