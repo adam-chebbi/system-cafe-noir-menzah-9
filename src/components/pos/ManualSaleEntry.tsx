@@ -9,13 +9,11 @@ import {
   Eye,
   ArrowLeft,
   Calendar,
-  Clock,
   CreditCard,
   Receipt,
   Utensils,
   AlertCircle,
   Sunrise,
-  Sun,
   Moon,
   Info,
   Sparkles,
@@ -23,20 +21,17 @@ import {
   PenLine
 } from 'lucide-react';
 
-type Shift = 'matin' | 'apres_midi' | 'soir';
+type Shift = 'matin' | 'soir';
 
 const SHIFT_OPTIONS: { value: Shift; label: string; icon: React.ElementType }[] = [
   { value: 'matin', label: 'Matin', icon: Sunrise },
-  { value: 'apres_midi', label: 'Après-midi', icon: Sun },
   { value: 'soir', label: 'Soir', icon: Moon }
 ];
 
-/** Suggère un service par défaut à partir de l'heure saisie, sans jamais forcer le choix de l'utilisateur. */
-const suggestShift = (timeStr: string): Shift => {
-  const hour = parseInt((timeStr || '').split(':')[0], 10);
-  if (isNaN(hour) || hour < 12) return 'matin';
-  if (hour < 18) return 'apres_midi';
-  return 'soir';
+/** Suggère un service par défaut selon l'heure actuelle, sans jamais forcer le choix de l'utilisateur. */
+const suggestShift = (): Shift => {
+  const hour = new Date().getHours();
+  return hour < 15 ? 'matin' : 'soir';
 };
 
 interface ManualSaleEntryProps {
@@ -65,8 +60,7 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
 }) => {
   // Form State
   const [saleDateOnly, setSaleDateOnly] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [saleTimeOnly, setSaleTimeOnly] = useState<string>(new Date().toISOString().slice(11, 16));
-  const [shift, setShift] = useState<Shift>(() => suggestShift(new Date().toISOString().slice(11, 16)));
+  const [shift, setShift] = useState<Shift>(() => suggestShift());
   const [tableNumber, setTableNumber] = useState<string>('');
   const [cashierName, setCashierName] = useState<string>(currentUser?.name || 'Administrateur');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('especes');
@@ -228,8 +222,10 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
     setLoading(true);
     setErrorMsg('');
     try {
+      const now = new Date();
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const payload = {
-        createdAt: new Date(`${saleDateOnly}T${saleTimeOnly}`).toISOString(),
+        createdAt: new Date(`${saleDateOnly}T${currentTime}`).toISOString(),
         tableNumber: consumptionType === 'sur_place' ? tableNumber : 'À emporter',
         consumptionType,
         shift,
@@ -328,7 +324,7 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                 1. Paramètres & Contexte de la Vente
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {/* Date */}
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-[#555D58] flex items-center space-x-1">
@@ -339,20 +335,6 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                     type="date"
                     value={saleDateOnly}
                     onChange={e => setSaleDateOnly(e.target.value)}
-                    className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
-                  />
-                </div>
-
-                {/* Heure */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-[#555D58] flex items-center space-x-1">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Heure :</span>
-                  </label>
-                  <input
-                    type="time"
-                    value={saleTimeOnly}
-                    onChange={e => setSaleTimeOnly(e.target.value)}
                     className="w-full p-2 bg-[#F7F7F5] border border-[#D9DDD8] rounded-xl text-xs font-bold text-[#252A27] focus:ring-2 focus:ring-[#A4DEC2] focus:outline-none"
                   />
                 </div>
@@ -417,7 +399,7 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
               {/* Service (Shift) */}
               <div className="space-y-1.5 pt-1">
                 <label className="text-[11px] font-bold text-[#555D58]">Service :</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {SHIFT_OPTIONS.map(opt => {
                     const ShiftIcon = opt.icon;
                     const active = shift === opt.value;
@@ -716,7 +698,7 @@ export const ManualSaleEntry: React.FC<ManualSaleEntryProps> = ({
                 <div className="text-center pb-2 border-b border-dashed border-[#C7CDC8]">
                   <h4 className="font-serif font-black text-sm text-[#252A27]">CAFÉ NOIR &bull; MENZAH 9</h4>
                   <p className="text-[10px] text-[#555D58]">
-                    {new Date(`${saleDateOnly}T${saleTimeOnly}`).toLocaleString('fr-FR')} &bull; Service {SHIFT_OPTIONS.find(o => o.value === shift)?.label}
+                    {new Date(`${saleDateOnly}T00:00`).toLocaleDateString('fr-FR')} &bull; Service {SHIFT_OPTIONS.find(o => o.value === shift)?.label}
                   </p>
                   <p className="text-[10px] text-[#555D58]">
                     {consumptionType === 'sur_place' ? `Sur place${tableNumber ? ` (${tableNumber})` : ''}` : 'À emporter'} &bull; Caissier: {cashierName}
